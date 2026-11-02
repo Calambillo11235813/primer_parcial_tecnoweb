@@ -1,6 +1,6 @@
 # ESTADO DEL PROYECTO: PRIMER PARCIAL TECNOLOGÍA WEB (FEDER)
 
-**Última actualización:** 29 de octubre de 2026  
+**Última actualización:** 30 de octubre de 2026  
 **Entorno:** Java puro (sin frameworks externos de correo) + PostgreSQL institucional  
 **Meta de desarrollo:** Plan de 3 días
 
@@ -39,7 +39,7 @@
 
 | Caso de Uso | Requisitos Funcionales Asociados | Estado | Componentes Desarrollados |
 | :--- | :--- | :--- | :--- |
-| **`CU-01: Gestionar Usuarios y Roles`** | **RF-14:** Autenticación de usuarios<br>**RF-15:** Roles y permisos | **IMPLEMENTADO** | • `Usuario.java`, `Rol.java`, `Auditoria.java`<br>• `SqlConnetion.java`<br>• `DUsuario.java` (CRUD transaccional + Auditoría)<br>• `NUsuario.java` (Cifrado SHA-256 + RBAC Director)<br>• Comandos: `INSUSR`, `MODUSR`, `DELUSR`, `LISUSR` |
+| **`CU-01: Gestionar Usuarios y Roles`** | **RF-14:** Autenticación de usuarios<br>**RF-15:** Roles y permisos | **IMPLEMENTADO (End-to-End)** | • `Usuario.java`, `Rol.java`, `Auditoria.java`<br>• `SqlConnetion.java`<br>• `DUsuario.java` (CRUD transaccional + Auditoría)<br>• `NUsuario.java` (Cifrado SHA-256 + RBAC Director)<br>• `ClientePOP3.java`, `ClienteSMTP.java`<br>• `CommandParser.java` (Gramática `INSUSR`, `MODUSR`, `DELUSR`, `LISUSR`, `HELP`)<br>• `EmailApp.java` (Listener asíncrono en background) |
 | **`CU-02: Gestionar Información Institucional`** | **RF-03:** Información institucional<br>**RF-04:** Redes sociales | **PENDIENTE** | Tablas: `PAGINA_INSTITUCIONAL`, `RED_SOCIAL`<br>Por implementar: `DPagina`, `DRedSocial`, `NInstitucional` |
 | **`CU-03: Gestionar Publicaciones y Medios`** | **RF-01:** Noticias y comunicados<br>**RF-02:** Galería multimedia<br>**RF-08:** Testimonios | **PENDIENTE** | Tablas: `NOTICIA`, `GALERIA_MULTIMEDIA`, `TESTIMONIO`<br>Por implementar: `DNoticia`, `DTestimonio`, `NPublicacion` |
 | **`CU-04: Gestionar Comunidades y Programas`** | **RF-05:** Comunidades beneficiarias<br>**RF-06:** Programas de asistencia<br>**RF-07:** Búsqueda y filtrado | **PENDIENTE** | Tablas: `COMUNIDAD`, `PROGRAMA_PRODUCTIVO`<br>Por implementar: `DComunidad`, `DPrograma`, `NComunidad` |
@@ -64,12 +64,12 @@ DÍA 1: Persistencia (Capa D...), Entidades y Lógica CU-01
 
 DÍA 2: Lógica de Negocio (Capa N...) y Parser de Comandos
   [x] Redactar COMANDOS_SINTAXIS.md (Diccionario y gramática de órdenes para CU-01)
-  [ ] Implementar CommandParser.java y comando HELP
+  [x] Implementar CommandParser.java y comando HELP
   [ ] Implementar Controladores de Negocio restantes (NCampana, NAporte, NConsulta, NComunidad)
   [ ] Validaciones de permisos por remitente (Director vs Secretaria vs Instructor)
 
 DÍA 3: Capa de Presentación (Sockets POP3/SMTP) e Integración
-  [ ] Implementar ClientePOP3.java (hilo MailVerificationThread con sondeo de 10-15s)
-  [ ] Implementar ClienteSMTP.java (SendEmailThread para respuestas tabuladas)
-  [ ] Orquestar en EmailApp.java y probar flujo extremo a extremo por correo
+  [x] Implementar ClientePOP3.java (Socket TCP 110, USER, PASS, STAT, RETR, DELE, parser RFC)
+  [x] Implementar ClienteSMTP.java (Socket TCP 25, HELO, MAIL FROM, RCPT TO, DATA, formato tabla ASCII)
+  [x] Orquestar en EmailApp.java (hilo continuo con sondeo de 10s y auto-respuesta por correo)
 ```

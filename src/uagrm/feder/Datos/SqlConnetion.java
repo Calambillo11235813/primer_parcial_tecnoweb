@@ -17,7 +17,7 @@ public class SqlConnetion {
     private static final String DATABASE = "db_grupo16sc";
     private static final String SCHEMA = "feder";
     private static final String USER = "grupo16sc";
-    private static final String PASSWORD = "grup016grup016*"; // Contraseña estándar asignada al grupo
+    private static final String PASSWORD = "grup016grup016*"; // Contraseña del grupo asignada
 
     private static final String URL = "jdbc:postgresql://" + HOST + ":" + PORT + "/" + DATABASE + "?currentSchema=" + SCHEMA;
 
