@@ -6,365 +6,304 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Capa de Datos: DUsuario
+ * Capa de Datos: DUsuario.
  * Gestiona el acceso y persistencia en PostgreSQL para la tabla USUARIO y su auditoría.
  */
 public class DUsuario {
 
-    public static final String[] HEADERS = {"ID", "NOMBRE COMPLETO", "CORREO ELECTRONICO", "ESTADO", "ROL"};
+    public static final String[] HEADERS = {
+        "ID", "NOMBRE COMPLETO", "CORREO ELECTRONICO", "ESTADO", "ROL"
+    };
 
     /**
      * Inserta un nuevo usuario y registra la operación en la tabla AUDITORIA.
-     * Manejo transaccional (commit/rollback).
+     *
+     * @param nombre            Nombre completo del usuario.
+     * @param email             Correo electrónico único.
+     * @param passHash          Hash SHA-256 de la contraseña.
+     * @param rolId             Identificador del rol asignado.
+     * @param usuarioOperadorId ID del usuario que ejecuta la operación.
+     * @return true si la transacción se completó con éxito; false en caso contrario.
      */
-    public boolean insert(String nombre, String email, String passHash, int rolId, int usuarioOperadorId) {
-        String sqlUsuario = "INSERT INTO feder.USUARIO (nombre_completo, correo_electronico, hash_contrasena, estado, rol_id) " +
-                            "VALUES (?, ?, ?, 'Activo', ?)";
-        String sqlAuditoria = "INSERT INTO feder.AUDITORIA (accion_realizada, tabla_afectada, usuario_id) " +
-                              "VALUES (?, ?, ?)";
+    public boolean insert(String nombre, String email, String passHash,
+            int rolId, int usuarioOperadorId) {
+        String sqlUsuario = "INSERT INTO feder.USUARIO "
+                + "(nombre_completo, correo_electronico, hash_contrasena, estado, rol_id) "
+                + "VALUES (?, ?, ?, 'Activo', ?)";
+        String sqlAuditoria = "INSERT INTO feder.AUDITORIA "
+                + "(accion_realizada, tabla_afectada, usuario_id) VALUES (?, ?, ?)";
 
-        Connection conn = null;
-        PreparedStatement psUsuario = null;
-        PreparedStatement psAuditoria = null;
-
-        try {
-            conn = SqlConnetion.getConnection();
+        try (Connection conn = SqlConnetion.getConnection()) {
             conn.setAutoCommit(false);
+            try (PreparedStatement psUsuario = conn.prepareStatement(sqlUsuario);
+                 PreparedStatement psAuditoria = conn.prepareStatement(sqlAuditoria)) {
 
-            // 1. Inserción de usuario
-            psUsuario = conn.prepareStatement(sqlUsuario);
-            psUsuario.setString(1, nombre);
-            psUsuario.setString(2, email.trim().toLowerCase());
-            psUsuario.setString(3, passHash);
-            psUsuario.setInt(4, rolId);
-            int filasUsuario = psUsuario.executeUpdate();
+                psUsuario.setString(1, nombre);
+                psUsuario.setString(2, email.trim().toLowerCase());
+                psUsuario.setString(3, passHash);
+                psUsuario.setInt(4, rolId);
 
-            if (filasUsuario == 0) {
+                if (psUsuario.executeUpdate() == 0) {
+                    conn.rollback();
+                    return false;
+                }
+
+                psAuditoria.setString(1, "INSERT");
+                psAuditoria.setString(2, "USUARIO");
+                psAuditoria.setInt(3, usuarioOperadorId);
+                psAuditoria.executeUpdate();
+
+                conn.commit();
+                return true;
+            } catch (SQLException e) {
                 conn.rollback();
+                System.err.println("[ERROR] DUsuario.insert: " + e.getMessage());
                 return false;
             }
-
-            // 2. Inserción de auditoría
-            psAuditoria = conn.prepareStatement(sqlAuditoria);
-            psAuditoria.setString(1, "INSERT");
-            psAuditoria.setString(2, "USUARIO");
-            psAuditoria.setInt(3, usuarioOperadorId);
-            psAuditoria.executeUpdate();
-
-            conn.commit();
-            return true;
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.insert: " + e.getMessage());
-            if (conn != null) {
-                try {
-                    conn.rollback();
-                } catch (SQLException ex) {
-                    System.err.println("Error en rollback: " + ex.getMessage());
-                }
-            }
+            System.err.println("[ERROR] Conexión en DUsuario.insert: " + e.getMessage());
             return false;
-        } finally {
-            closeResources(psUsuario, null);
-            closeResources(psAuditoria, conn);
         }
     }
 
     /**
      * Actualiza los datos de un usuario existente y registra la operación en AUDITORIA.
+     *
+     * @param id                ID del usuario a modificar.
+     * @param nombre            Nuevo nombre completo.
+     * @param email             Nuevo correo electrónico.
+     * @param estado            Nuevo estado ('Activo' o 'Inactivo').
+     * @param rolId             Nuevo ID de rol.
+     * @param usuarioOperadorId ID del usuario operador.
+     * @return true si la actualización fue exitosa; false en caso contrario.
      */
-    public boolean update(int id, String nombre, String email, String estado, int rolId, int usuarioOperadorId) {
-        String sqlUsuario = "UPDATE feder.USUARIO SET nombre_completo = ?, correo_electronico = ?, estado = ?, rol_id = ? " +
-                            "WHERE id_usuario = ?";
-        String sqlAuditoria = "INSERT INTO feder.AUDITORIA (accion_realizada, tabla_afectada, usuario_id) " +
-                              "VALUES (?, ?, ?)";
+    public boolean update(int id, String nombre, String email, String estado,
+            int rolId, int usuarioOperadorId) {
+        String sqlUsuario = "UPDATE feder.USUARIO SET nombre_completo = ?, "
+                + "correo_electronico = ?, estado = ?, rol_id = ? WHERE id_usuario = ?";
+        String sqlAuditoria = "INSERT INTO feder.AUDITORIA "
+                + "(accion_realizada, tabla_afectada, usuario_id) VALUES (?, ?, ?)";
 
-        Connection conn = null;
-        PreparedStatement psUsuario = null;
-        PreparedStatement psAuditoria = null;
-
-        try {
-            conn = SqlConnetion.getConnection();
+        try (Connection conn = SqlConnetion.getConnection()) {
             conn.setAutoCommit(false);
+            try (PreparedStatement psUsuario = conn.prepareStatement(sqlUsuario);
+                 PreparedStatement psAuditoria = conn.prepareStatement(sqlAuditoria)) {
 
-            // 1. Actualización de usuario
-            psUsuario = conn.prepareStatement(sqlUsuario);
-            psUsuario.setString(1, nombre);
-            psUsuario.setString(2, email.trim().toLowerCase());
-            psUsuario.setString(3, estado);
-            psUsuario.setInt(4, rolId);
-            psUsuario.setInt(5, id);
-            int filasActualizadas = psUsuario.executeUpdate();
+                psUsuario.setString(1, nombre);
+                psUsuario.setString(2, email.trim().toLowerCase());
+                psUsuario.setString(3, estado);
+                psUsuario.setInt(4, rolId);
+                psUsuario.setInt(5, id);
 
-            if (filasActualizadas == 0) {
+                if (psUsuario.executeUpdate() == 0) {
+                    conn.rollback();
+                    return false;
+                }
+
+                psAuditoria.setString(1, "UPDATE");
+                psAuditoria.setString(2, "USUARIO");
+                psAuditoria.setInt(3, usuarioOperadorId);
+                psAuditoria.executeUpdate();
+
+                conn.commit();
+                return true;
+            } catch (SQLException e) {
                 conn.rollback();
+                System.err.println("[ERROR] DUsuario.update: " + e.getMessage());
                 return false;
             }
-
-            // 2. Registro en auditoría
-            psAuditoria = conn.prepareStatement(sqlAuditoria);
-            psAuditoria.setString(1, "UPDATE");
-            psAuditoria.setString(2, "USUARIO");
-            psAuditoria.setInt(3, usuarioOperadorId);
-            psAuditoria.executeUpdate();
-
-            conn.commit();
-            return true;
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.update: " + e.getMessage());
-            if (conn != null) {
-                try {
-                    conn.rollback();
-                } catch (SQLException ex) {
-                    System.err.println("Error en rollback: " + ex.getMessage());
-                }
-            }
+            System.err.println("[ERROR] Conexión en DUsuario.update: " + e.getMessage());
             return false;
-        } finally {
-            closeResources(psUsuario, null);
-            closeResources(psAuditoria, conn);
         }
     }
 
     /**
      * Realiza baja lógica cambiando el estado a 'Inactivo' y registra en AUDITORIA.
+     *
+     * @param id                ID del usuario a dar de baja.
+     * @param usuarioOperadorId ID del usuario operador.
+     * @return true si se dio de baja correctamente; false en caso contrario.
      */
     public boolean delete(int id, int usuarioOperadorId) {
         String sqlUsuario = "UPDATE feder.USUARIO SET estado = 'Inactivo' WHERE id_usuario = ?";
-        String sqlAuditoria = "INSERT INTO feder.AUDITORIA (accion_realizada, tabla_afectada, usuario_id) " +
-                              "VALUES (?, ?, ?)";
+        String sqlAuditoria = "INSERT INTO feder.AUDITORIA "
+                + "(accion_realizada, tabla_afectada, usuario_id) VALUES (?, ?, ?)";
 
-        Connection conn = null;
-        PreparedStatement psUsuario = null;
-        PreparedStatement psAuditoria = null;
-
-        try {
-            conn = SqlConnetion.getConnection();
+        try (Connection conn = SqlConnetion.getConnection()) {
             conn.setAutoCommit(false);
+            try (PreparedStatement psUsuario = conn.prepareStatement(sqlUsuario);
+                 PreparedStatement psAuditoria = conn.prepareStatement(sqlAuditoria)) {
 
-            // 1. Baja lógica
-            psUsuario = conn.prepareStatement(sqlUsuario);
-            psUsuario.setInt(1, id);
-            int filasAfectadas = psUsuario.executeUpdate();
+                psUsuario.setInt(1, id);
+                if (psUsuario.executeUpdate() == 0) {
+                    conn.rollback();
+                    return false;
+                }
 
-            if (filasAfectadas == 0) {
+                psAuditoria.setString(1, "DELETE");
+                psAuditoria.setString(2, "USUARIO");
+                psAuditoria.setInt(3, usuarioOperadorId);
+                psAuditoria.executeUpdate();
+
+                conn.commit();
+                return true;
+            } catch (SQLException e) {
                 conn.rollback();
+                System.err.println("[ERROR] DUsuario.delete: " + e.getMessage());
                 return false;
             }
-
-            // 2. Auditoría
-            psAuditoria = conn.prepareStatement(sqlAuditoria);
-            psAuditoria.setString(1, "DELETE");
-            psAuditoria.setString(2, "USUARIO");
-            psAuditoria.setInt(3, usuarioOperadorId);
-            psAuditoria.executeUpdate();
-
-            conn.commit();
-            return true;
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.delete: " + e.getMessage());
-            if (conn != null) {
-                try {
-                    conn.rollback();
-                } catch (SQLException ex) {
-                    System.err.println("Error en rollback: " + ex.getMessage());
-                }
-            }
+            System.err.println("[ERROR] Conexión en DUsuario.delete: " + e.getMessage());
             return false;
-        } finally {
-            closeResources(psUsuario, null);
-            closeResources(psAuditoria, conn);
         }
     }
 
     /**
-     * Retorna una lista con todos los usuarios y el nombre de su rol (JOIN feder.ROL).
-     * Cada fila coincide con la cabecera HEADERS.
+     * Retorna una lista con todos los usuarios y el nombre de su rol.
+     *
+     * @return Lista de arreglos String[] con las columnas de HEADERS.
      */
     public List<String[]> list() {
         List<String[]> resultado = new ArrayList<>();
-        String sql = "SELECT u.id_usuario, u.nombre_completo, u.correo_electronico, u.estado, r.nombre_rol " +
-                     "FROM feder.USUARIO u " +
-                     "INNER JOIN feder.ROL r ON u.rol_id = r.id_rol " +
-                     "ORDER BY u.id_usuario ASC";
+        String sql = "SELECT u.id_usuario, u.nombre_completo, u.correo_electronico, "
+                + "u.estado, r.nombre_rol "
+                + "FROM feder.USUARIO u "
+                + "INNER JOIN feder.ROL r ON u.rol_id = r.id_rol "
+                + "ORDER BY u.id_usuario ASC";
 
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
-
-        try {
-            conn = SqlConnetion.getConnection();
-            ps = conn.prepareStatement(sql);
-            rs = ps.executeQuery();
+        try (Connection conn = SqlConnetion.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
-                String[] fila = new String[]{
-                        String.valueOf(rs.getInt("id_usuario")),
-                        rs.getString("nombre_completo"),
-                        rs.getString("correo_electronico"),
-                        rs.getString("estado"),
-                        rs.getString("nombre_rol")
-                };
-                resultado.add(fila);
+                resultado.add(new String[]{
+                    String.valueOf(rs.getInt("id_usuario")),
+                    rs.getString("nombre_completo"),
+                    rs.getString("correo_electronico"),
+                    rs.getString("estado"),
+                    rs.getString("nombre_rol")
+                });
             }
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.list: " + e.getMessage());
-        } finally {
-            closeResources(ps, conn, rs);
+            System.err.println("[ERROR] DUsuario.list: " + e.getMessage());
         }
         return resultado;
     }
 
     /**
      * Obtiene un usuario por su identificador primario.
+     *
+     * @param id Identificador del usuario.
+     * @return Instancia de Usuario o null si no existe.
      */
     public Usuario getById(int id) {
-        String sql = "SELECT id_usuario, nombre_completo, correo_electronico, hash_contrasena, estado, fecha_registro, rol_id " +
-                     "FROM feder.USUARIO WHERE id_usuario = ?";
+        String sql = "SELECT id_usuario, nombre_completo, correo_electronico, "
+                + "hash_contrasena, estado, fecha_registro, rol_id "
+                + "FROM feder.USUARIO WHERE id_usuario = ?";
 
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+        try (Connection conn = SqlConnetion.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
 
-        try {
-            conn = SqlConnetion.getConnection();
-            ps = conn.prepareStatement(sql);
             ps.setInt(1, id);
-            rs = ps.executeQuery();
-
-            if (rs.next()) {
-                return new Usuario(
-                        rs.getInt("id_usuario"),
-                        rs.getString("nombre_completo"),
-                        rs.getString("correo_electronico"),
-                        rs.getString("hash_contrasena"),
-                        rs.getString("estado"),
-                        rs.getTimestamp("fecha_registro"),
-                        rs.getInt("rol_id")
-                );
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapearUsuario(rs);
+                }
             }
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.getById: " + e.getMessage());
-        } finally {
-            closeResources(ps, conn, rs);
+            System.err.println("[ERROR] DUsuario.getById: " + e.getMessage());
         }
         return null;
     }
 
     /**
      * Obtiene un usuario por su correo electrónico.
+     *
+     * @param email Dirección de correo a buscar.
+     * @return Instancia de Usuario o null si no existe.
      */
     public Usuario getByEmail(String email) {
-        String sql = "SELECT id_usuario, nombre_completo, correo_electronico, hash_contrasena, estado, fecha_registro, rol_id " +
-                     "FROM feder.USUARIO WHERE LOWER(correo_electronico) = LOWER(?)";
+        String sql = "SELECT id_usuario, nombre_completo, correo_electronico, "
+                + "hash_contrasena, estado, fecha_registro, rol_id "
+                + "FROM feder.USUARIO WHERE LOWER(correo_electronico) = LOWER(?)";
 
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+        try (Connection conn = SqlConnetion.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
 
-        try {
-            conn = SqlConnetion.getConnection();
-            ps = conn.prepareStatement(sql);
             ps.setString(1, email.trim());
-            rs = ps.executeQuery();
-
-            if (rs.next()) {
-                return new Usuario(
-                        rs.getInt("id_usuario"),
-                        rs.getString("nombre_completo"),
-                        rs.getString("correo_electronico"),
-                        rs.getString("hash_contrasena"),
-                        rs.getString("estado"),
-                        rs.getTimestamp("fecha_registro"),
-                        rs.getInt("rol_id")
-                );
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapearUsuario(rs);
+                }
             }
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.getByEmail: " + e.getMessage());
-        } finally {
-            closeResources(ps, conn, rs);
+            System.err.println("[ERROR] DUsuario.getByEmail: " + e.getMessage());
         }
         return null;
     }
 
     /**
      * Retorna el nombre del rol asignado a un usuario activo mediante su correo electrónico.
-     * Ejemplo: 'Director', 'Secretaria', 'Instructor'.
+     *
+     * @param email Correo electrónico del usuario.
+     * @return Nombre del rol ('Director', 'Secretaria', 'Instructor') o null si no está activo.
      */
     public String getRolByEmail(String email) {
-        String sql = "SELECT r.nombre_rol " +
-                     "FROM feder.USUARIO u " +
-                     "INNER JOIN feder.ROL r ON u.rol_id = r.id_rol " +
-                     "WHERE LOWER(u.correo_electronico) = LOWER(?) AND u.estado = 'Activo'";
+        String sql = "SELECT r.nombre_rol "
+                + "FROM feder.USUARIO u "
+                + "INNER JOIN feder.ROL r ON u.rol_id = r.id_rol "
+                + "WHERE LOWER(u.correo_electronico) = LOWER(?) AND u.estado = 'Activo'";
 
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+        try (Connection conn = SqlConnetion.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
 
-        try {
-            conn = SqlConnetion.getConnection();
-            ps = conn.prepareStatement(sql);
             ps.setString(1, email.trim());
-            rs = ps.executeQuery();
-
-            if (rs.next()) {
-                return rs.getString("nombre_rol");
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("nombre_rol");
+                }
             }
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.getRolByEmail: " + e.getMessage());
-        } finally {
-            closeResources(ps, conn, rs);
+            System.err.println("[ERROR] DUsuario.getRolByEmail: " + e.getMessage());
         }
         return null;
     }
 
     /**
-     * Verifica si existe un rol por su id.
+     * Verifica si existe un rol registrado con el ID proporcionado.
+     *
+     * @param rolId Identificador del rol.
+     * @return true si el rol existe; false en caso contrario.
      */
     public boolean existeRol(int rolId) {
         String sql = "SELECT 1 FROM feder.ROL WHERE id_rol = ?";
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+        try (Connection conn = SqlConnetion.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
 
-        try {
-            conn = SqlConnetion.getConnection();
-            ps = conn.prepareStatement(sql);
             ps.setInt(1, rolId);
-            rs = ps.executeQuery();
-            return rs.next();
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         } catch (SQLException e) {
-            System.err.println("Error en DUsuario.existeRol: " + e.getMessage());
+            System.err.println("[ERROR] DUsuario.existeRol: " + e.getMessage());
             return false;
-        } finally {
-            closeResources(ps, conn, rs);
         }
     }
 
-    private void closeResources(Statement stmt, Connection conn) {
-        closeResources(stmt, conn, null);
-    }
-
-    private void closeResources(Statement stmt, Connection conn, ResultSet rs) {
-        if (rs != null) {
-            try {
-                rs.close();
-            } catch (SQLException e) {
-                System.err.println("Error al cerrar ResultSet: " + e.getMessage());
-            }
-        }
-        if (stmt != null) {
-            try {
-                stmt.close();
-            } catch (SQLException e) {
-                System.err.println("Error al cerrar Statement: " + e.getMessage());
-            }
-        }
-        SqlConnetion.closeConnection(conn);
+    private Usuario mapearUsuario(ResultSet rs) throws SQLException {
+        return new Usuario(
+                rs.getInt("id_usuario"),
+                rs.getString("nombre_completo"),
+                rs.getString("correo_electronico"),
+                rs.getString("hash_contrasena"),
+                rs.getString("estado"),
+                rs.getTimestamp("fecha_registro"),
+                rs.getInt("rol_id")
+        );
     }
 }
-

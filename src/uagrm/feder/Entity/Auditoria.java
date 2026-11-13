@@ -3,7 +3,7 @@ package uagrm.feder.Entity;
 import java.sql.Timestamp;
 
 /**
- * Entidad del Dominio: Auditoria
+ * Entidad del Dominio: Auditoria.
  * Registra cada operación sensible ejecutada en el sistema (INSERT, UPDATE, DELETE).
  */
 public class Auditoria {
@@ -17,7 +17,8 @@ public class Auditoria {
     public Auditoria() {
     }
 
-    public Auditoria(int id_auditoria, String accion_realizada, String tabla_afectada, Timestamp fecha_hora, int usuario_id) {
+    public Auditoria(int id_auditoria, String accion_realizada, String tabla_afectada,
+            Timestamp fecha_hora, int usuario_id) {
         this.id_auditoria = id_auditoria;
         this.accion_realizada = accion_realizada;
         this.tabla_afectada = tabla_afectada;
@@ -73,13 +74,12 @@ public class Auditoria {
 
     @Override
     public String toString() {
-        return "Auditoria{" +
-                "id_auditoria=" + id_auditoria +
-                ", accion_realizada='" + accion_realizada + '\'' +
-                ", tabla_afectada='" + tabla_afectada + '\'' +
-                ", fecha_hora=" + fecha_hora +
-                ", usuario_id=" + usuario_id +
-                '}';
+        return "Auditoria{"
+                + "id_auditoria=" + id_auditoria
+                + ", accion_realizada='" + accion_realizada + '\''
+                + ", tabla_afectada='" + tabla_afectada + '\''
+                + ", fecha_hora=" + fecha_hora
+                + ", usuario_id=" + usuario_id
+                + '}';
     }
 }
-

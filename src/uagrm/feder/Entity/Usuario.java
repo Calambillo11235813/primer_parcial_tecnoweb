@@ -3,7 +3,7 @@ package uagrm.feder.Entity;
 import java.sql.Timestamp;
 
 /**
- * Entidad del Dominio: Usuario
+ * Entidad del Dominio: Usuario.
  * Representa a un usuario del sistema (Director, Secretaria, Instructor).
  */
 public class Usuario {
@@ -19,7 +19,8 @@ public class Usuario {
     public Usuario() {
     }
 
-    public Usuario(int id_usuario, String nombre_completo, String correo_electronico, String hash_contrasena, String estado, Timestamp fecha_registro, int rol_id) {
+    public Usuario(int id_usuario, String nombre_completo, String correo_electronico,
+            String hash_contrasena, String estado, Timestamp fecha_registro, int rol_id) {
         this.id_usuario = id_usuario;
         this.nombre_completo = nombre_completo;
         this.correo_electronico = correo_electronico;
@@ -29,7 +30,8 @@ public class Usuario {
         this.rol_id = rol_id;
     }
 
-    public Usuario(String nombre_completo, String correo_electronico, String hash_contrasena, String estado, int rol_id) {
+    public Usuario(String nombre_completo, String correo_electronico,
+            String hash_contrasena, String estado, int rol_id) {
         this.nombre_completo = nombre_completo;
         this.correo_electronico = correo_electronico;
         this.hash_contrasena = hash_contrasena;
@@ -95,14 +97,13 @@ public class Usuario {
 
     @Override
     public String toString() {
-        return "Usuario{" +
-                "id_usuario=" + id_usuario +
-                ", nombre_completo='" + nombre_completo + '\'' +
-                ", correo_electronico='" + correo_electronico + '\'' +
-                ", estado='" + estado + '\'' +
-                ", fecha_registro=" + fecha_registro +
-                ", rol_id=" + rol_id +
-                '}';
+        return "Usuario{"
+                + "id_usuario=" + id_usuario
+                + ", nombre_completo='" + nombre_completo + '\''
+                + ", correo_electronico='" + correo_electronico + '\''
+                + ", estado='" + estado + '\''
+                + ", fecha_registro=" + fecha_registro
+                + ", rol_id=" + rol_id
+                + '}';
     }
 }
-
