@@ -1,17 +1,15 @@
 package uagrm.feder.Presentacion;
 
 import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Simulador Interactivo de Terminal Telnet SMTP (Puerto 25) para el Sistema FEDER.
- * Emula la máquina de estados y las validaciones de sintaxis RFC 5321 de Postfix:
- * - Valida secuencia obligatoria: HELO/EHLO -> MAIL FROM:<email> -> RCPT TO:<email> -> DATA -> '.' -> QUIT.
- * - Valida formato sintáctico estricto de direcciones entre corchetes angulares <usuario@dominio>.
- * - Rechaza comandos no reconocidos o fuera de orden con códigos de error estándar (500, 501, 503).
+ * Emula la máquina de estados y las validaciones de sintaxis RFC 5321 de Postfix.
+ * Detecta automáticamente la codificación de la consola para no requerir comandos manuales.
  */
 public class SimuladorConsola {
 
@@ -19,7 +17,6 @@ public class SimuladorConsola {
         INICIO, HELO_OK, MAIL_FROM_OK, RCPT_TO_OK, EN_DATA
     }
 
-    // Expresión regular RFC 5321 para validar sintaxis de dirección: <usuario@dominio>
     private static final Pattern PATRON_MAIL_FROM = Pattern.compile(
             "^MAIL\\s+FROM:\\s*<([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+)>$",
             Pattern.CASE_INSENSITIVE
@@ -31,9 +28,10 @@ public class SimuladorConsola {
     );
 
     public static void main(String[] args) {
-        // Asegurar que la salida de consola use UTF-8 estándar
-        System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
-        Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+        // Detectar automáticamente la codificación nativa de la consola de Windows/Linux
+        Charset charsetConsola = detectarCharsetConsola();
+        System.setOut(new PrintStream(System.out, true, charsetConsola));
+        Scanner scanner = new Scanner(System.in, charsetConsola);
         CommandParser parser = new CommandParser();
 
         System.out.println("========================================================================");
@@ -54,17 +52,11 @@ public class SimuladorConsola {
             }
             String linea = scanner.nextLine();
 
-            // -------------------------------------------------------------
-            // MODO DATA: Captura del mensaje hasta encontrar una línea con un punto '.'
-            // -------------------------------------------------------------
+            // MODO DATA
             if (estado == EstadoSMTP.EN_DATA) {
                 if (linea.trim().equals(".")) {
                     System.out.println("250 2.0.0 Ok: queued as FEDER-" + System.currentTimeMillis());
-
-                    // Procesar a través de las capas reales (CommandParser -> N... -> D... -> PostgreSQL)
                     procesarMensajeTelnet(parser, mailFrom, rcptTo, bufferData.toString());
-
-                    // Limpiar y resetear para la siguiente transacción de correo
                     bufferData.setLength(0);
                     estado = EstadoSMTP.HELO_OK;
                 } else {
@@ -80,7 +72,7 @@ public class SimuladorConsola {
 
             String upperLine = trimLine.toUpperCase();
 
-            // 1. Comando HELO / EHLO
+            // HELO / EHLO
             if (upperLine.startsWith("HELO") || upperLine.startsWith("EHLO")) {
                 String[] partes = trimLine.split("\\s+");
                 if (partes.length < 2) {
@@ -93,13 +85,12 @@ public class SimuladorConsola {
                     System.out.println("250 mail.tecnoweb.org.bo Hello " + partes[1] + ", pleased to meet you");
                 }
             }
-            // 2. Comando MAIL FROM:<...>
+            // MAIL FROM:<...>
             else if (upperLine.startsWith("MAIL FROM")) {
                 if (estado == EstadoSMTP.INICIO) {
                     System.out.println("503 5.5.1 Error: send HELO/EHLO first");
                     continue;
                 }
-
                 Matcher matcher = PATRON_MAIL_FROM.matcher(trimLine);
                 if (!matcher.matches()) {
                     System.out.println("501 5.1.7 Bad sender address syntax. Formato esperado: MAIL FROM:<usuario@dominio>");
@@ -109,13 +100,12 @@ public class SimuladorConsola {
                     System.out.println("250 2.1.0 Ok");
                 }
             }
-            // 3. Comando RCPT TO:<...>
+            // RCPT TO:<...>
             else if (upperLine.startsWith("RCPT TO")) {
                 if (estado != EstadoSMTP.MAIL_FROM_OK && estado != EstadoSMTP.RCPT_TO_OK) {
                     System.out.println("503 5.5.1 Error: need MAIL FROM command before RCPT TO");
                     continue;
                 }
-
                 Matcher matcher = PATRON_RCPT_TO.matcher(trimLine);
                 if (!matcher.matches()) {
                     System.out.println("501 5.1.3 Bad recipient address syntax. Formato esperado: RCPT TO:<usuario@dominio>");
@@ -125,7 +115,7 @@ public class SimuladorConsola {
                     System.out.println("250 2.1.5 Ok");
                 }
             }
-            // 4. Comando DATA
+            // DATA
             else if (upperLine.equals("DATA")) {
                 if (estado != EstadoSMTP.RCPT_TO_OK) {
                     System.out.println("503 5.5.1 Error: need valid RCPT TO command before DATA");
@@ -135,7 +125,7 @@ public class SimuladorConsola {
                 bufferData.setLength(0);
                 System.out.println("354 End data with <CR><LF>.<CR><LF>");
             }
-            // 5. Comando RSET (Reset de transacción)
+            // RSET
             else if (upperLine.equals("RSET")) {
                 estado = (estado != EstadoSMTP.INICIO) ? EstadoSMTP.HELO_OK : EstadoSMTP.INICIO;
                 mailFrom = "";
@@ -143,16 +133,16 @@ public class SimuladorConsola {
                 bufferData.setLength(0);
                 System.out.println("250 2.0.0 Ok (Transaction reset)");
             }
-            // 6. Comando NOOP
+            // NOOP
             else if (upperLine.equals("NOOP")) {
                 System.out.println("250 2.0.0 Ok");
             }
-            // 7. Comando QUIT / EXIT
+            // QUIT
             else if (upperLine.equals("QUIT") || upperLine.equals("EXIT") || upperLine.equals(":SALIR")) {
                 System.out.println("221 2.0.0 Bye (Cerrando conexion Telnet)");
                 break;
             }
-            // 8. Comando HELP de SMTP
+            // HELP
             else if (upperLine.equals("HELP")) {
                 System.out.println("214-Comandos SMTP RFC 5321 soportados:");
                 System.out.println("214-  HELO <dominio>");
@@ -161,9 +151,7 @@ public class SimuladorConsola {
                 System.out.println("214-  DATA");
                 System.out.println("214-  RSET");
                 System.out.println("214   QUIT");
-            }
-            // 9. Comando desconocido
-            else {
+            } else {
                 System.out.println("500 5.5.2 Error: command not recognized ('" + trimLine + "')");
             }
         }
@@ -171,9 +159,6 @@ public class SimuladorConsola {
         scanner.close();
     }
 
-    /**
-     * Parsea las cabeceras From, Subject y el Cuerpo enviados en DATA, y los procesa con CommandParser.
-     */
     private static void procesarMensajeTelnet(CommandParser parser, String mailFrom,
             String rcptTo, String contenidoData) {
         String[] lineas = contenidoData.split("\n");
@@ -200,7 +185,6 @@ public class SimuladorConsola {
             }
         }
 
-        // Determinar remitente efectivo (prioriza From: en header, sino MAIL FROM)
         String remitenteEfectivo = !fromHeader.isEmpty() ? fromHeader : mailFrom;
         remitenteEfectivo = remitenteEfectivo.replaceAll("[<>]", "").trim().toLowerCase();
 
@@ -213,7 +197,6 @@ public class SimuladorConsola {
         System.out.println("------------------------------------------------------------------------");
 
         long inicio = System.currentTimeMillis();
-        // Ejecución en la lógica de negocio y persistencia en PostgreSQL
         String respuesta = parser.procesar(remitenteEfectivo, subject, cuerpo.toString());
         long tiempo = System.currentTimeMillis() - inicio;
 
@@ -224,5 +207,26 @@ public class SimuladorConsola {
         System.out.println();
         System.out.println(respuesta);
         System.out.println("------------------------------------------------------------------------\n");
+    }
+
+    /**
+     * Detecta la codificación real de la consola actual del sistema operativo.
+     */
+    private static Charset detectarCharsetConsola() {
+        String consoleEncoding = System.getProperty("sun.stdout.encoding");
+        if (consoleEncoding != null) {
+            try {
+                return Charset.forName(consoleEncoding);
+            } catch (Exception ignored) {
+            }
+        }
+        String stdoutEncoding = System.getProperty("stdout.encoding");
+        if (stdoutEncoding != null) {
+            try {
+                return Charset.forName(stdoutEncoding);
+            } catch (Exception ignored) {
+            }
+        }
+        return Charset.defaultCharset();
     }
 }

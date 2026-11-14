@@ -1,6 +1,9 @@
 package uagrm.feder.Presentacion;
 
+import uagrm.feder.Datos.DPaginaInstitucional;
+import uagrm.feder.Datos.DRedSocial;
 import uagrm.feder.Datos.DUsuario;
+import uagrm.feder.Negocio.NInstitucional;
 import uagrm.feder.Negocio.NUsuario;
 
 import java.util.ArrayList;
@@ -12,18 +15,31 @@ import java.util.regex.Pattern;
 /**
  * Analizador Sintáctico determinista de comandos para el sistema FEDER.
  * Procesa las órdenes enviadas por correo electrónico (Asunto o Cuerpo)
- * y las despacha a la Capa de Negocio (NUsuario).
+ * y las despacha a la Capa de Negocio (NUsuario, NInstitucional).
  */
 public class CommandParser {
 
+    private static final List<String> COMANDOS_VALIDOS = Arrays.asList(
+            // CU-01: Usuarios y Roles
+            "INSUSR", "MODUSR", "DELUSR", "LISUSR",
+            // CU-02: Información Institucional y Redes Sociales
+            "INSPAG", "MODPAG", "DELPAG", "LISPAG",
+            "INSRED", "MODRED", "DELRED", "LISRED",
+            // Ayuda general
+            "HELP"
+    );
+
     private final NUsuario nUsuario;
+    private final NInstitucional nInstitucional;
 
     public CommandParser() {
         this.nUsuario = new NUsuario();
+        this.nInstitucional = new NInstitucional();
     }
 
-    public CommandParser(NUsuario nUsuario) {
+    public CommandParser(NUsuario nUsuario, NInstitucional nInstitucional) {
         this.nUsuario = nUsuario;
+        this.nInstitucional = nInstitucional;
     }
 
     /**
@@ -39,21 +55,22 @@ public class CommandParser {
             return "ERROR [401]: Remitente no identificado o dirección de correo vacía.";
         }
 
-        // 1. Determinar cuál campo contiene el comando (prioridad: Subject, luego Body)
+        // 1. Determinar cuál campo contiene el comando (Subject, Body o combinado)
         String textoOrden = buscarTextoComando(subject, body);
         if (textoOrden == null || textoOrden.trim().isEmpty()) {
-            return "ERROR [400]: No se detectó ningún comando válido en el asunto ni en el cuerpo del correo.\n"
+            return "ERROR [400]: No se detectó ningún comando válido en el correo.\n"
                     + "Envíe 'HELP' para consultar el manual de comandos permitidos.";
         }
 
         textoOrden = textoOrden.trim();
 
-        // 2. Extraer el nombre del comando y sus parámetros de forma robusta
-        String comando = "";
+        // 2. Extraer el nombre del comando y sus parámetros
+        String comando;
         List<String> parametros = new ArrayList<>();
 
-        // Patrón tolerante: busca COMANDO [parametros] sin importar si después hay puntos, espacios o caracteres extras
-        Pattern patronCorchetes = Pattern.compile("^([A-Za-z0-9_]+)\\s*\\[([^\\]]*)\\]");
+        Pattern patronCorchetes = Pattern.compile(
+                "^([A-Za-z0-9_]+)\\s*\\[([^\\]]*)\\]", Pattern.DOTALL
+        );
         Matcher matcher = patronCorchetes.matcher(textoOrden);
 
         if (matcher.find()) {
@@ -66,16 +83,12 @@ public class CommandParser {
                 }
             }
         } else {
-            // Sintaxis simple sin corchetes (ej. "HELP", "LISUSR", o "INSUSR param1; param2")
-            // Limpiar puntos finales sueltos si existen (ej. "HELP." o "LISUSR.")
             String textoLimpio = textoOrden.replaceAll("[.]+$", "").trim();
             String[] partesEspacio = textoLimpio.split("\\s+", 2);
             comando = partesEspacio[0].toUpperCase();
 
             if (partesEspacio.length > 1) {
-                String resto = partesEspacio[1].trim();
-                // Si el resto tenía corchetes incompletos o texto con punto
-                resto = resto.replaceAll("[\\[\\]]", "").trim();
+                String resto = partesEspacio[1].trim().replaceAll("[\\[\\]]", "").trim();
                 if (!resto.isEmpty()) {
                     String[] partes = resto.split(";");
                     for (String p : partes) {
@@ -88,44 +101,62 @@ public class CommandParser {
         // 3. Despachar a la Capa de Negocio según el comando
         try {
             switch (comando) {
+                // --- CU-01: Gestionar Usuarios y Roles ---
                 case "INSUSR":
                     return nUsuario.registrar(parametros, remitente);
-
                 case "MODUSR":
                     return nUsuario.modificar(parametros, remitente);
-
                 case "DELUSR":
                     return nUsuario.eliminar(parametros, remitente);
-
                 case "LISUSR":
-                    List<String[]> usuarios = nUsuario.listar(remitente);
-                    return construirTablaAscii(DUsuario.HEADERS, usuarios);
+                    return construirTablaAscii(DUsuario.HEADERS, nUsuario.listar(remitente));
 
+                // --- CU-02: Gestionar Información Institucional (RF-03) ---
+                case "INSPAG":
+                    return nInstitucional.registrarPagina(parametros, remitente);
+                case "MODPAG":
+                    return nInstitucional.modificarPagina(parametros, remitente);
+                case "DELPAG":
+                    return nInstitucional.eliminarPagina(parametros, remitente);
+                case "LISPAG":
+                    return construirTablaAscii(
+                            DPaginaInstitucional.HEADERS, nInstitucional.listarPaginas()
+                    );
+
+                // --- CU-02: Gestionar Redes Sociales (RF-04) ---
+                case "INSRED":
+                    return nInstitucional.registrarRedSocial(parametros, remitente);
+                case "MODRED":
+                    return nInstitucional.modificarRedSocial(parametros, remitente);
+                case "DELRED":
+                    return nInstitucional.eliminarRedSocial(parametros, remitente);
+                case "LISRED":
+                    return construirTablaAscii(
+                            DRedSocial.HEADERS, nInstitucional.listarRedesSociales()
+                    );
+
+                // --- Manual de Ayuda ---
                 case "HELP":
                     return obtenerManualAyuda();
 
                 default:
                     return "ERROR [404]: Comando desconocido '" + comando + "'.\n"
-                            + "Comandos disponibles: INSUSR, MODUSR, DELUSR, LISUSR, HELP.\n"
-                            + "Envíe 'HELP' para mayor información de sintaxis.";
+                            + "Envíe 'HELP' para consultar el catálogo de comandos y su sintaxis.";
             }
         } catch (SecurityException se) {
             return se.getMessage();
         } catch (Exception ex) {
-            return "ERROR [500]: Ocurrió un error inesperado al procesar el comando: " + ex.getMessage();
+            return "ERROR [500]: Error inesperado al procesar el comando: " + ex.getMessage();
         }
     }
 
-    /**
-     * Limpia un parámetro individual eliminando espacios al borde, comillas o puntos residuales.
-     */
     private String limpiarParametro(String param) {
         if (param == null) {
             return "";
         }
         String p = param.trim();
-        // Quitar comillas dobles o simples al inicio y al final si las incluyeron
-        if ((p.startsWith("\"") && p.endsWith("\"")) || (p.startsWith("'") && p.endsWith("'"))) {
+        if ((p.startsWith("\"") && p.endsWith("\""))
+                || (p.startsWith("'") && p.endsWith("'"))) {
             if (p.length() >= 2) {
                 p = p.substring(1, p.length() - 1).trim();
             }
@@ -134,44 +165,64 @@ public class CommandParser {
     }
 
     /**
-     * Localiza la línea que contiene el comando dentro del asunto o las primeras líneas del cuerpo.
+     * Localiza la orden completa combinando Asunto y Cuerpo de forma flexible.
      */
     private String buscarTextoComando(String subject, String body) {
-        List<String> comandosValidos = Arrays.asList("INSUSR", "MODUSR", "DELUSR", "LISUSR", "HELP");
+        String subTrim = subject != null ? subject.trim() : "";
+        String bodyTrim = body != null ? body.trim() : "";
 
-        // 1. Revisar asunto
-        if (subject != null) {
-            String subTrim = subject.trim();
-            for (String cmd : comandosValidos) {
-                if (subTrim.toUpperCase().startsWith(cmd)) {
-                    return subTrim;
+        for (String cmd : COMANDOS_VALIDOS) {
+            if (subTrim.toUpperCase().startsWith(cmd)) {
+                if (subTrim.equalsIgnoreCase(cmd) && !bodyTrim.isEmpty()
+                        && !cmd.equals("HELP")) {
+                    return cmd + " " + extraerBloqueDesde(bodyTrim);
                 }
+                return subTrim;
             }
         }
 
-        // 2. Revisar cuerpo línea por línea
-        if (body != null) {
-            String[] lineas = body.split("\n");
-            for (String linea : lineas) {
-                String lineaTrim = linea.trim();
-                for (String cmd : comandosValidos) {
+        if (!bodyTrim.isEmpty()) {
+            String[] lineas = bodyTrim.split("\r?\n");
+            for (int i = 0; i < lineas.length; i++) {
+                String lineaTrim = lineas[i].trim();
+                for (String cmd : COMANDOS_VALIDOS) {
                     if (lineaTrim.toUpperCase().startsWith(cmd)) {
-                        return lineaTrim;
+                        StringBuilder bloque = new StringBuilder(lineaTrim);
+                        if (lineaTrim.contains("[") && !lineaTrim.contains("]")) {
+                            for (int j = i + 1; j < lineas.length; j++) {
+                                bloque.append(" ").append(lineas[j].trim());
+                                if (lineas[j].contains("]")) {
+                                    break;
+                                }
+                            }
+                        }
+                        return bloque.toString();
                     }
                 }
             }
         }
 
-        // Si el asunto tiene texto pero no coincide directamente con la lista, retornarlo para evaluarlo
-        if (subject != null && !subject.trim().isEmpty()) {
-            return subject.trim();
+        if (!subTrim.isEmpty()) {
+            return subTrim;
         }
+        return !bodyTrim.isEmpty() ? bodyTrim.split("\r?\n")[0].trim() : null;
+    }
 
-        return null;
+    private String extraerBloqueDesde(String texto) {
+        int inicio = texto.indexOf('[');
+        int fin = texto.indexOf(']');
+        if (inicio != -1 && fin > inicio) {
+            return texto.substring(inicio, fin + 1).replaceAll("\\r?\\n", " ");
+        }
+        return texto.split("\r?\n")[0].trim();
     }
 
     /**
      * Construye una tabla ASCII legible y auto-dimensionada para respuestas tabulares.
+     *
+     * @param cabeceras Arreglo de nombres de columnas.
+     * @param filas     Lista de filas con los datos.
+     * @return Cadena con la tabla formateada en ASCII.
      */
     public static String construirTablaAscii(String[] cabeceras, List<String[]> filas) {
         if (filas == null || filas.isEmpty()) {
@@ -181,12 +232,10 @@ public class CommandParser {
         int columnas = cabeceras.length;
         int[] anchos = new int[columnas];
 
-        // Calcular ancho con base en las cabeceras
         for (int i = 0; i < columnas; i++) {
             anchos[i] = cabeceras[i].length();
         }
 
-        // Ajustar ancho con base en los datos de las filas
         for (String[] fila : filas) {
             for (int i = 0; i < columnas && i < fila.length; i++) {
                 if (fila[i] != null && fila[i].length() > anchos[i]) {
@@ -195,7 +244,6 @@ public class CommandParser {
             }
         }
 
-        // Construir separador (+-----+---------+)
         StringBuilder separador = new StringBuilder("+");
         for (int ancho : anchos) {
             for (int k = 0; k < ancho + 2; k++) {
@@ -209,7 +257,6 @@ public class CommandParser {
         sb.append("TOTAL REGISTROS: ").append(filas.size()).append("\n\n");
         sb.append(separador);
 
-        // Línea de cabecera
         sb.append("|");
         for (int i = 0; i < columnas; i++) {
             sb.append(" ").append(padRight(cabeceras[i], anchos[i])).append(" |");
@@ -217,7 +264,6 @@ public class CommandParser {
         sb.append("\n");
         sb.append(separador);
 
-        // Filas de datos
         for (String[] fila : filas) {
             sb.append("|");
             for (int i = 0; i < columnas; i++) {
@@ -235,40 +281,34 @@ public class CommandParser {
         return String.format("%-" + n + "s", s);
     }
 
-    /**
-     * Genera el manual del comando HELP con la sintaxis de todos los comandos soportados.
-     */
     private String obtenerManualAyuda() {
         return "========================================================================\n"
                 + "           MANUAL DE COMANDOS DEL SISTEMA INSTITUCIONAL FEDER           \n"
                 + "========================================================================\n\n"
                 + "FORMATO GENERAL:\n"
                 + "  COMANDO [parametro1; parametro2; ...]\n\n"
-                + "COMANDOS DISPONIBLES (CU-01: USUARIOS Y ROLES):\n"
                 + "------------------------------------------------------------------------\n"
-                + "1. INSUSR [nombre_completo; correo_electronico; contrasena; rol_id]\n"
-                + "   - Permiso requerido: Solo rol 'Director'.\n"
-                + "   - Descripción: Registra un nuevo usuario con contraseña cifrada (SHA-256).\n"
-                + "   - Ejemplo: INSUSR [Maria Lopez; mlopez@feder.org.bo; Secr2026!; 2]\n\n"
-                + "2. MODUSR [id_usuario; nombre_completo; correo_electronico; estado; rol_id]\n"
-                + "   - Permiso requerido: Solo rol 'Director'.\n"
-                + "   - Estados válidos: 'Activo' o 'Inactivo'.\n"
-                + "   - Ejemplo: MODUSR [2; Maria Lopez Perez; mlopez@feder.org.bo; Activo; 2]\n\n"
-                + "3. DELUSR [id_usuario]\n"
-                + "   - Permiso requerido: Solo rol 'Director'.\n"
-                + "   - Descripción: Realiza baja lógica (estado 'Inactivo') del usuario.\n"
-                + "   - Ejemplo: DELUSR [2]\n\n"
-                + "4. LISUSR []\n"
-                + "   - Permiso requerido: Usuarios activos (Director, Secretaria, Instructor).\n"
-                + "   - Descripción: Devuelve el listado tabulado de usuarios registrados.\n"
-                + "   - Ejemplo: LISUSR []\n\n"
-                + "5. HELP\n"
-                + "   - Permiso requerido: Público / Cualquier usuario.\n"
-                + "   - Descripción: Retorna esta guía de comandos.\n\n"
-                + "CATÁLOGO DE ROLES:\n"
-                + "  ID 1: Director\n"
-                + "  ID 2: Secretaria\n"
-                + "  ID 3: Instructor\n"
+                + "CU-01: GESTIONAR USUARIOS Y ROLES (RF-14, RF-15)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSUSR [nombre_completo; correo_electronico; contrasena; rol_id]\n"
+                + "  MODUSR [id_usuario; nombre_completo; correo_electronico; estado; rol_id]\n"
+                + "  DELUSR [id_usuario]\n"
+                + "  LISUSR []\n"
+                + "  * Roles: 1=Director, 2=Secretaria, 3=Instructor\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "CU-02: GESTIONAR INFORMACIÓN INSTITUCIONAL Y REDES SOCIALES (RF-03, RF-04)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSPAG [titulo; contenido]\n"
+                + "  MODPAG [id_pagina; titulo; contenido]\n"
+                + "  DELPAG [id_pagina]\n"
+                + "  LISPAG []\n\n"
+                + "  INSRED [plataforma; url_enlace]\n"
+                + "  MODRED [id_red_social; plataforma; url_enlace; estado]\n"
+                + "  DELRED [id_red_social]\n"
+                + "  LISRED []\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "AYUDA GENERAL:\n"
+                + "  HELP\n"
                 + "========================================================================";
     }
 }
