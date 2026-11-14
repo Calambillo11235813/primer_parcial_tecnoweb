@@ -6,11 +6,12 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 /**
  * Cliente SMTP puro mediante Sockets TCP para el protocolo RFC 5321.
  * Se conecta a mail.tecnoweb.org.bo:25 para el despacho de correos electrónicos
- * de respuesta con tablas y acuses estructurados.
+ * con soporte completo UTF-8 en asunto (RFC 2047) y cuerpo.
  */
 public class ClienteSMTP {
 
@@ -38,133 +39,122 @@ public class ClienteSMTP {
      * Secuencia: HELO -> MAIL FROM -> RCPT TO -> DATA -> [Headers + Body] -> . -> QUIT
      *
      * @param destinatario Dirección de correo de destino.
-     * @param asunto       Título del correo.
+     * @param asunto       Título del correo (se codifica en UTF-8 RFC 2047 si contiene acentos/ñ).
      * @param cuerpo       Contenido en texto plano / tabla ASCII.
      * @return true si el correo fue aceptado por el servidor SMTP.
      */
     public boolean enviarCorreo(String destinatario, String asunto, String cuerpo) {
-        Socket socket = null;
-        BufferedReader reader = null;
-        DataOutputStream writer = null;
+        try (Socket socket = new Socket(host, port)) {
+            socket.setSoTimeout(15000);
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                 DataOutputStream writer = new DataOutputStream(socket.getOutputStream())) {
 
-        try {
-            socket = new Socket(host, port);
-            socket.setSoTimeout(15000); // 15s de timeout de lectura
-            reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-            writer = new DataOutputStream(socket.getOutputStream());
+                // 1. Saludo del servidor (espera código 220)
+                String respBanner = leerRespuesta(reader);
+                if (!respBanner.startsWith("220")) {
+                    System.err.println("[ERROR] SMTP Banner: " + respBanner);
+                    return false;
+                }
 
-            // 1. Saludo del servidor (espera código 220)
-            String respBanner = leerRespuesta(reader);
-            if (!respBanner.startsWith("220")) {
-                System.err.println("SMTP Banner Error: " + respBanner);
-                return false;
+                // 2. HELO tecnoweb.org.bo (espera código 250)
+                enviarComando(writer, "HELO " + DEFAULT_HELO);
+                String respHelo = leerRespuesta(reader);
+                if (!respHelo.startsWith("250")) {
+                    System.err.println("[ERROR] SMTP HELO: " + respHelo);
+                    return false;
+                }
+
+                // 3. MAIL FROM:<origen> (espera código 250)
+                enviarComando(writer, "MAIL FROM:<" + remitenteSistema + ">");
+                String respMailFrom = leerRespuesta(reader);
+                if (!respMailFrom.startsWith("250")) {
+                    System.err.println("[ERROR] SMTP MAIL FROM: " + respMailFrom);
+                    return false;
+                }
+
+                // 4. RCPT TO:<destinatario> (espera código 250)
+                enviarComando(writer, "RCPT TO:<" + destinatario.trim() + ">");
+                String respRcpt = leerRespuesta(reader);
+                if (!respRcpt.startsWith("250")) {
+                    System.err.println("[ERROR] SMTP RCPT TO: " + respRcpt);
+                    return false;
+                }
+
+                // 5. DATA (espera código 354)
+                enviarComando(writer, "DATA");
+                String respData = leerRespuesta(reader);
+                if (!respData.startsWith("354")) {
+                    System.err.println("[ERROR] SMTP DATA: " + respData);
+                    return false;
+                }
+
+                // 6. Envío de cabeceras RFC 822 y cuerpo en UTF-8
+                String asuntoCodificado = codificarAsuntoUTF8(asunto);
+                StringBuilder mensaje = new StringBuilder();
+                mensaje.append("From: \"Sistema FEDER\" <").append(remitenteSistema).append(">\r\n");
+                mensaje.append("To: <").append(destinatario.trim()).append(">\r\n");
+                mensaje.append("Subject: ").append(asuntoCodificado).append("\r\n");
+                mensaje.append("MIME-Version: 1.0\r\n");
+                mensaje.append("Content-Type: text/plain; charset=UTF-8\r\n");
+                mensaje.append("Content-Transfer-Encoding: 8bit\r\n");
+                mensaje.append("\r\n");
+                mensaje.append(cuerpo).append("\r\n");
+                mensaje.append(".\r\n");
+
+                writer.write(mensaje.toString().getBytes(StandardCharsets.UTF_8));
+                writer.flush();
+
+                String respFinData = leerRespuesta(reader);
+                if (!respFinData.startsWith("250")) {
+                    System.err.println("[ERROR] SMTP Envio Datos: " + respFinData);
+                    return false;
+                }
+
+                // 7. QUIT (espera código 221)
+                enviarComando(writer, "QUIT");
+                leerRespuesta(reader);
+                return true;
             }
-
-            // 2. HELO tecnoweb.org.bo (espera código 250)
-            enviarComando(writer, "HELO " + DEFAULT_HELO);
-            String respHelo = leerRespuesta(reader);
-            if (!respHelo.startsWith("250")) {
-                System.err.println("SMTP HELO Error: " + respHelo);
-                return false;
-            }
-
-            // 3. MAIL FROM:<origen> (espera código 250)
-            enviarComando(writer, "MAIL FROM:<" + remitenteSistema + ">");
-            String respMailFrom = leerRespuesta(reader);
-            if (!respMailFrom.startsWith("250")) {
-                System.err.println("SMTP MAIL FROM Error: " + respMailFrom);
-                return false;
-            }
-
-            // 4. RCPT TO:<destinatario> (espera código 250)
-            enviarComando(writer, "RCPT TO:<" + destinatario.trim() + ">");
-            String respRcpt = leerRespuesta(reader);
-            if (!respRcpt.startsWith("250")) {
-                System.err.println("SMTP RCPT TO Error: " + respRcpt);
-                return false;
-            }
-
-            // 5. DATA (espera código 354)
-            enviarComando(writer, "DATA");
-            String respData = leerRespuesta(reader);
-            if (!respData.startsWith("354")) {
-                System.err.println("SMTP DATA Error: " + respData);
-                return false;
-            }
-
-            // 6. Envío de cabeceras RFC 822 y cuerpo
-            StringBuilder mensaje = new StringBuilder();
-            mensaje.append("From: \"Sistema FEDER\" <").append(remitenteSistema).append(">\r\n");
-            mensaje.append("To: <").append(destinatario.trim()).append(">\r\n");
-            mensaje.append("Subject: ").append(asunto).append("\r\n");
-            mensaje.append("MIME-Version: 1.0\r\n");
-            mensaje.append("Content-Type: text/plain; charset=UTF-8\r\n");
-            mensaje.append("Content-Transfer-Encoding: 8bit\r\n");
-            mensaje.append("\r\n"); // Línea en blanco obligatoria que separa cabeceras del cuerpo
-
-            // Cuerpo del mensaje
-            mensaje.append(cuerpo).append("\r\n");
-
-            // Finalizador de transmisión SMTP: CRLF . CRLF
-            mensaje.append(".\r\n");
-
-            byte[] bytesMensaje = mensaje.toString().getBytes(StandardCharsets.UTF_8);
-            writer.write(bytesMensaje);
-            writer.flush();
-
-            String respFinData = leerRespuesta(reader);
-            if (!respFinData.startsWith("250")) {
-                System.err.println("SMTP Envio Datos Error: " + respFinData);
-                return false;
-            }
-
-            // 7. QUIT (espera código 221)
-            enviarComando(writer, "QUIT");
-            leerRespuesta(reader);
-
-            return true;
         } catch (IOException e) {
-            System.err.println("Excepción I/O en ClienteSMTP: " + e.getMessage());
+            System.err.println("[ERROR] Excepción I/O en ClienteSMTP: " + e.getMessage());
             return false;
-        } finally {
-            cerrarRecursos(reader, writer, socket);
         }
     }
 
     /**
-     * Escribe un comando en el canal TCP asegurando el terminador de línea CRLF (\r\n).
+     * Codifica el asunto bajo RFC 2047 (=?UTF-8?B?...?=) si contiene caracteres fuera de ASCII.
      */
+    private String codificarAsuntoUTF8(String asunto) {
+        if (asunto == null || asunto.isEmpty()) {
+            return "";
+        }
+        boolean soloAscii = asunto.chars().allMatch(c -> c < 128);
+        if (soloAscii) {
+            return asunto;
+        }
+        String base64 = Base64.getEncoder().encodeToString(
+                asunto.getBytes(StandardCharsets.UTF_8)
+        );
+        return "=?UTF-8?B?" + base64 + "?=";
+    }
+
     private void enviarComando(DataOutputStream writer, String comando) throws IOException {
-        writer.writeBytes(comando + "\r\n");
+        writer.write((comando + "\r\n").getBytes(StandardCharsets.UTF_8));
         writer.flush();
     }
 
-    /**
-     * Lee la respuesta del servidor SMTP, gestionando posibles respuestas multilínea (ej. 250-...).
-     */
     private String leerRespuesta(BufferedReader reader) throws IOException {
         String linea = reader.readLine();
-        if (linea == null) return "";
-
-        // Si la respuesta es multilínea (código seguido de guión '-'), leer hasta el final
+        if (linea == null) {
+            return "";
+        }
         while (linea.length() >= 4 && linea.charAt(3) == '-') {
             linea = reader.readLine();
-            if (linea == null) break;
+            if (linea == null) {
+                break;
+            }
         }
         return linea;
     }
-
-    /**
-     * Cierra de forma ordenada los descriptores de entrada/salida y el Socket TCP.
-     */
-    private void cerrarRecursos(BufferedReader reader, DataOutputStream writer, Socket socket) {
-        try {
-            if (reader != null) reader.close();
-            if (writer != null) writer.close();
-            if (socket != null && !socket.isClosed()) socket.close();
-        } catch (IOException e) {
-            System.err.println("Error cerrando socket SMTP: " + e.getMessage());
-        }
-    }
 }
-

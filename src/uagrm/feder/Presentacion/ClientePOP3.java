@@ -1,21 +1,31 @@
 package uagrm.feder.Presentacion;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.Socket;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Cliente POP3 puro mediante Sockets TCP para el protocolo RFC 1939.
- * Se conecta a mail.tecnoweb.org.bo:110 para la descarga y gestión de mensajes entrantes.
+ * Incluye soporte completo UTF-8 y decodificación MIME (RFC 2047 Base64 y Quoted-Printable)
+ * para soportar eñes, tildes y caracteres especiales enviados desde Gmail/Outlook/Thunderbird.
  */
 public class ClientePOP3 {
 
     private static final String DEFAULT_HOST = "mail.tecnoweb.org.bo";
     private static final int DEFAULT_PORT = 110;
+
+    // Patrón RFC 2047: =?charset?encoding?encoded-text?=
+    private static final Pattern RFC2047_PATTERN = Pattern.compile(
+            "=\\?([^?]+)\\?([BbQq])\\?([^?]*)\\?="
+    );
 
     private final String host;
     private final int port;
@@ -72,12 +82,17 @@ public class ClientePOP3 {
     }
 
     /**
-     * Establece la conexión física TCP con el servidor POP3 y lee el saludo inicial (+OK).
+     * Establece la conexión TCP con el servidor POP3 utilizando codificación UTF-8.
+     *
+     * @return true si el servidor respondió con +OK.
+     * @throws IOException Si ocurre un error de red.
      */
     public boolean conectar() throws IOException {
         this.socket = new Socket(host, port);
-        this.socket.setSoTimeout(15000); // 15s de timeout de lectura
-        this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        this.socket.setSoTimeout(15000);
+        this.reader = new BufferedReader(
+                new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)
+        );
         this.writer = new DataOutputStream(socket.getOutputStream());
 
         String saludo = reader.readLine();
@@ -86,30 +101,34 @@ public class ClientePOP3 {
 
     /**
      * Autentica la sesión POP3 enviando USER y PASS.
+     *
+     * @param usuario    Nombre de usuario del buzón.
+     * @param contrasena Contraseña del buzón.
+     * @return true si la autenticación fue exitosa.
+     * @throws IOException Si falla la lectura/escritura en el socket.
      */
     public boolean autenticar(String usuario, String contrasena) throws IOException {
-        // 1. Enviar comando USER
         enviarComando("USER " + usuario);
         String respUser = reader.readLine();
         if (respUser == null || !respUser.startsWith("+OK")) {
-            System.err.println("Error POP3 en USER: " + respUser);
+            System.err.println("[ERROR] POP3 USER: " + respUser);
             return false;
         }
 
-        // 2. Enviar comando PASS
         enviarComando("PASS " + contrasena);
         String respPass = reader.readLine();
         if (respPass == null || !respPass.startsWith("+OK")) {
-            System.err.println("Error POP3 en PASS: " + respPass);
+            System.err.println("[ERROR] POP3 PASS: " + respPass);
             return false;
         }
-
         return true;
     }
 
     /**
-     * Consulta el estado del buzón con STAT y retorna la cantidad de mensajes disponibles.
-     * Respuesta esperada: +OK <cantidad_mensajes> <tamano_octetos>
+     * Consulta el estado del buzón con STAT y retorna la cantidad de mensajes.
+     *
+     * @return Número de mensajes disponibles en el buzón.
+     * @throws IOException Si ocurre un error de comunicación.
      */
     public int obtenerCantidadMensajes() throws IOException {
         enviarComando("STAT");
@@ -120,7 +139,7 @@ public class ClientePOP3 {
                 try {
                     return Integer.parseInt(partes[1]);
                 } catch (NumberFormatException e) {
-                    System.err.println("Error parseando respuesta STAT: " + respuesta);
+                    System.err.println("[ERROR] Parseando STAT: " + respuesta);
                 }
             }
         }
@@ -128,25 +147,26 @@ public class ClientePOP3 {
     }
 
     /**
-     * Descarga el correo correspondiente al número dado mediante el comando RETR
-     * y analiza sus cabeceras (From, Subject) y cuerpo.
-     * Lectura multilínea hasta recibir una línea con un punto solitario '.'
+     * Descarga el correo correspondiente al índice dado mediante RETR y decodifica
+     * sus cabeceras y cuerpo en UTF-8.
+     *
+     * @param nro Número de mensaje en el buzón POP3.
+     * @return Instancia de Correo con remitente, asunto y cuerpo limpios.
+     * @throws IOException Si ocurre un error de lectura en el socket.
      */
     public Correo descargarCorreo(int nro) throws IOException {
         enviarComando("RETR " + nro);
         String linea = reader.readLine();
         if (linea == null || !linea.startsWith("+OK")) {
-            System.err.println("Error al recuperar correo #" + nro + ": " + linea);
+            System.err.println("[ERROR] Al recuperar correo #" + nro + ": " + linea);
             return null;
         }
 
         StringBuilder rawEmail = new StringBuilder();
         while ((linea = reader.readLine()) != null) {
-            // El protocolo POP3 finaliza la transmisión multilínea con un punto '.'
             if (linea.equals(".")) {
                 break;
             }
-            // Byte-stuffing: Si una línea empieza con '..', el primer punto se descarta
             if (linea.startsWith("..")) {
                 linea = linea.substring(1);
             }
@@ -157,8 +177,11 @@ public class ClientePOP3 {
     }
 
     /**
-     * Marca un mensaje para su eliminación en el servidor mediante el comando DELE.
-     * La eliminación efectiva ocurre al enviar QUIT.
+     * Marca un mensaje para su eliminación en el servidor mediante DELE.
+     *
+     * @param nro Número del mensaje a eliminar.
+     * @return true si el servidor confirmó con +OK.
+     * @throws IOException Si falla el envío del comando.
      */
     public boolean borrarCorreo(int nro) throws IOException {
         enviarComando("DELE " + nro);
@@ -174,94 +197,196 @@ public class ClientePOP3 {
             if (writer != null && socket != null && !socket.isClosed()) {
                 enviarComando("QUIT");
                 if (reader != null) {
-                    reader.readLine(); // Leer acuse de QUIT (+OK Goodbye)
+                    reader.readLine();
                 }
             }
         } catch (IOException ignored) {
         } finally {
             try {
-                if (reader != null) reader.close();
-                if (writer != null) writer.close();
-                if (socket != null && !socket.isClosed()) socket.close();
+                if (reader != null) {
+                    reader.close();
+                }
+                if (writer != null) {
+                    writer.close();
+                }
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                }
             } catch (IOException e) {
-                System.err.println("Error cerrando socket POP3: " + e.getMessage());
+                System.err.println("[ERROR] Cerrando socket POP3: " + e.getMessage());
             }
         }
     }
 
-    /**
-     * Envía una línea de comando terminada estrictamente en CRLF (\r\n).
-     */
     private void enviarComando(String comando) throws IOException {
-        writer.writeBytes(comando + "\r\n");
+        byte[] bytes = (comando + "\r\n").getBytes(StandardCharsets.UTF_8);
+        writer.write(bytes);
         writer.flush();
     }
 
     /**
-     * Parsea el mensaje crudo separando cabeceras RFC 822 del cuerpo del correo.
-     * Extrae: From (limpiando nombre y dejando solo el email), Subject y Body.
+     * Parsea el correo crudo aplicando header unfolding (RFC 5322), decodificación
+     * RFC 2047 para el asunto y Quoted-Printable para el cuerpo.
      */
     private Correo parsearMensaje(int nro, String rawContent) {
-        String[] lineas = rawContent.split("\r\n");
+        int sepIndex = rawContent.indexOf("\r\n\r\n");
+        String bloqueCabeceras = sepIndex >= 0
+                ? rawContent.substring(0, sepIndex)
+                : rawContent;
+        String bloqueCuerpo = sepIndex >= 0
+                ? rawContent.substring(sepIndex + 4)
+                : "";
+
+        // Desplegar cabeceras multilínea (unfolding: CRLF seguido de espacio o tab)
+        String cabecerasUnfolded = bloqueCabeceras.replaceAll("\r\n[ \t]+", " ");
+        String[] lineasCabecera = cabecerasUnfolded.split("\r\n");
+
         String remitente = "";
         String asunto = "";
-        StringBuilder cuerpo = new StringBuilder();
+        boolean esQuotedPrintable = false;
 
-        boolean enCabecera = true;
-
-        for (String linea : lineas) {
-            if (enCabecera) {
-                // Una línea en blanco marca el fin de los headers y el inicio del cuerpo
-                if (linea.trim().isEmpty()) {
-                    enCabecera = false;
-                    continue;
-                }
-
-                String lineaLower = linea.toLowerCase();
-                if (lineaLower.startsWith("from:")) {
-                    remitente = extraerEmail(linea.substring(5).trim());
-                } else if (lineaLower.startsWith("subject:")) {
-                    asunto = linea.substring(8).trim();
-                }
-            } else {
-                cuerpo.append(linea).append("\n");
+        for (String linea : lineasCabecera) {
+            String lower = linea.toLowerCase();
+            if (lower.startsWith("from:")) {
+                String fromDecodificado = decodificarRFC2047(linea.substring(5).trim());
+                remitente = extraerEmail(fromDecodificado);
+            } else if (lower.startsWith("subject:")) {
+                asunto = decodificarRFC2047(linea.substring(8).trim());
+            } else if (lower.startsWith("content-transfer-encoding:")
+                    && lower.contains("quoted-printable")) {
+                esQuotedPrintable = true;
             }
         }
 
-        // Limpieza básica del cuerpo (por si contiene texto plano o firmas)
-        String cuerpoTexto = limpiarCuerpoTexto(cuerpo.toString());
-
+        String cuerpoTexto = procesarCuerpoMime(bloqueCuerpo, esQuotedPrintable);
         return new Correo(nro, remitente, asunto, cuerpoTexto);
     }
 
     /**
-     * Extrae la dirección de correo limpia.
-     * Ejemplo: "Juan Perez <juan@example.com>" -> "juan@example.com"
+     * Decodifica palabras codificadas bajo el estándar RFC 2047 (=?UTF-8?Q?...?= y =?UTF-8?B?...?=).
+     *
+     * @param texto Cadena de cabecera posiblemente codificada.
+     * @return Texto limpio en UTF-8 con eñes y tildes restauradas.
      */
+    public static String decodificarRFC2047(String texto) {
+        if (texto == null || !texto.contains("=?")) {
+            return texto != null ? texto : "";
+        }
+
+        // Unir bloques encoded-word adyacentes separados solo por espacios
+        String preparado = texto.replaceAll("\\?=\\s+=\\?", "?==?");
+        Matcher matcher = RFC2047_PATTERN.matcher(preparado);
+        StringBuffer resultado = new StringBuffer();
+
+        while (matcher.find()) {
+            String nombreCharset = matcher.group(1);
+            String tipoCodificacion = matcher.group(2).toUpperCase();
+            String contenido = matcher.group(3);
+
+            Charset charset;
+            try {
+                charset = Charset.forName(nombreCharset);
+            } catch (Exception e) {
+                charset = StandardCharsets.UTF_8;
+            }
+
+            String decodificado;
+            try {
+                if ("B".equals(tipoCodificacion)) {
+                    byte[] bytes = Base64.getDecoder().decode(contenido.replaceAll("\\s+", ""));
+                    decodificado = new String(bytes, charset);
+                } else {
+                    // En Q-encoding de cabeceras, '_' representa espacio (0x20)
+                    String qContenido = contenido.replace('_', ' ');
+                    decodificado = decodificarQuotedPrintable(qContenido, charset);
+                }
+            } catch (Exception e) {
+                decodificado = contenido;
+            }
+
+            matcher.appendReplacement(resultado, Matcher.quoteReplacement(decodificado));
+        }
+        matcher.appendTail(resultado);
+        return resultado.toString().trim();
+    }
+
+    /**
+     * Decodifica una cadena en formato Quoted-Printable (ej. =C3=B1 -> ñ) usando el Charset indicado.
+     *
+     * @param input   Texto en Quoted-Printable.
+     * @param charset Juego de caracteres destino (por defecto UTF-8).
+     * @return Cadena decodificada.
+     */
+    public static String decodificarQuotedPrintable(String input, Charset charset) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        // Eliminar saltos de línea suaves (soft line breaks: '=' al final de línea)
+        String sinSaltosSuaves = input.replaceAll("=\r?\n", "");
+        byte[] bytesEntrada = sinSaltosSuaves.getBytes(StandardCharsets.ISO_8859_1);
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(bytesEntrada.length);
+
+        for (int i = 0; i < bytesEntrada.length; i++) {
+            int b = bytesEntrada[i];
+            if (b == '=' && i + 2 < bytesEntrada.length) {
+                int u = Character.digit((char) bytesEntrada[i + 1], 16);
+                int l = Character.digit((char) bytesEntrada[i + 2], 16);
+                if (u != -1 && l != -1) {
+                    buffer.write((char) ((u << 4) + l));
+                    i += 2;
+                    continue;
+                }
+            }
+            buffer.write(b);
+        }
+        return new String(buffer.toByteArray(), charset);
+    }
+
+    /**
+     * Limpia el cuerpo MIME extrayendo texto plano y decodificando Quoted-Printable si aplica.
+     */
+    private String procesarCuerpoMime(String rawBody, boolean qpEnCabeceraPrincipal) {
+        if (rawBody == null || rawBody.isEmpty()) {
+            return "";
+        }
+
+        boolean usarQP = qpEnCabeceraPrincipal
+                || rawBody.toLowerCase().contains("content-transfer-encoding: quoted-printable")
+                || rawBody.matches("(?s).*=C3=[89AB][0-9A-F].*");
+
+        String cuerpo = usarQP
+                ? decodificarQuotedPrintable(rawBody, StandardCharsets.UTF_8)
+                : rawBody;
+
+        // Filtrar líneas de fronteras MIME y sub-cabeceras para dejar limpio el comando
+        StringBuilder limpio = new StringBuilder();
+        for (String linea : cuerpo.split("\r?\n")) {
+            String trim = linea.trim();
+            String lower = trim.toLowerCase();
+            if (trim.startsWith("--")
+                    || lower.startsWith("content-type:")
+                    || lower.startsWith("content-transfer-encoding:")) {
+                continue;
+            }
+            limpio.append(linea).append("\n");
+        }
+        return limpio.toString().trim();
+    }
+
     private String extraerEmail(String fromRaw) {
-        if (fromRaw == null) return "";
-        // Si contiene formato <email@dominio.com>
-        Pattern pattern = Pattern.compile("<([^>]+)>");
-        Matcher matcher = pattern.matcher(fromRaw);
+        if (fromRaw == null) {
+            return "";
+        }
+        Matcher matcher = Pattern.compile("<([^>]+)>").matcher(fromRaw);
         if (matcher.find()) {
             return matcher.group(1).trim().toLowerCase();
         }
-        // Si viene directo como texto
-        Pattern emailPattern = Pattern.compile("[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+");
-        Matcher emailMatcher = emailPattern.matcher(fromRaw);
+        Matcher emailMatcher = Pattern.compile(
+                "[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+"
+        ).matcher(fromRaw);
         if (emailMatcher.find()) {
             return emailMatcher.group().trim().toLowerCase();
         }
         return fromRaw.trim().toLowerCase();
     }
-
-    /**
-     * Limpia secuencias MIME comunes o saltos de línea sobrantes del cuerpo.
-     */
-    private String limpiarCuerpoTexto(String cuerpo) {
-        if (cuerpo == null) return "";
-        // Eliminar saltos excesivos y espacios al borde
-        return cuerpo.trim();
-    }
 }
-
