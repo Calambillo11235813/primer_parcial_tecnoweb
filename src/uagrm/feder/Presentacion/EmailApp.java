@@ -2,10 +2,15 @@ package uagrm.feder.Presentacion;
 
 import uagrm.feder.Presentacion.ClientePOP3.Correo;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Aplicación Frontera / Capa de Presentación: EmailApp.
  * Hilo continuo de sondeo asíncrono sobre el buzón POP3 institucional.
- * Escucha comandos entrantes por correo, delega a CommandParser y responde vía SMTP.
+ * Implementa arquitectura desacoplada en dos fases:
+ * 1. Descarga y borrado garantizado con QUIT inmediato en POP3 (evita bloqueos y timeouts).
+ * 2. Procesamiento de comandos y despacho de respuestas por SMTP.
  */
 public class EmailApp implements Runnable {
 
@@ -43,6 +48,13 @@ public class EmailApp implements Runnable {
         System.out.println("====================================================================\n");
 
         while (ejecutando) {
+            List<Correo> correosDescargados = new ArrayList<>();
+
+            // -------------------------------------------------------------
+            // FASE 1: Conexión POP3 rápida -> Descarga -> Marca DELE -> QUIT
+            // Al hacer QUIT inmediatamente, el servidor POP3 borra los correos
+            // sin riesgo de timeouts causados por demoras en SMTP.
+            // -------------------------------------------------------------
             ClientePOP3 pop3 = new ClientePOP3(MAIL_HOST, POP3_PORT);
             try {
                 if (pop3.conectar()) {
@@ -53,8 +65,8 @@ public class EmailApp implements Runnable {
                             for (int i = 1; i <= totalCorreos; i++) {
                                 Correo correo = pop3.descargarCorreo(i);
                                 if (correo != null) {
-                                    procesarYResponder(correo);
-                                    pop3.borrarCorreo(i);
+                                    correosDescargados.add(correo);
+                                    pop3.borrarCorreo(i); // Marcar con DELE
                                 }
                             }
                         }
@@ -65,9 +77,20 @@ public class EmailApp implements Runnable {
             } catch (Exception e) {
                 System.err.println("[POP3] Excepción durante el sondeo: " + e.getMessage());
             } finally {
+                // Al enviar QUIT aquí, el servidor confirma las eliminaciones de todos los correos descargados
                 pop3.cerrar();
             }
 
+            // -------------------------------------------------------------
+            // FASE 2: Procesamiento y Despacho SMTP (en memoria)
+            // -------------------------------------------------------------
+            if (!correosDescargados.isEmpty()) {
+                for (Correo correo : correosDescargados) {
+                    procesarYResponder(correo);
+                }
+            }
+
+            // Pausa hasta la siguiente ronda
             try {
                 Thread.sleep(INTERVALO_SONDEO_MS);
             } catch (InterruptedException e) {
@@ -96,16 +119,25 @@ public class EmailApp implements Runnable {
         System.out.println("     Asunto: " + asunto);
         System.out.println("--------------------------------------------------------------------");
 
+        // 1. Filtrar remitentes vacíos
         if (remitente == null || remitente.isEmpty()) {
             System.err.println("[WARN] Remitente vacío. Se omite respuesta.");
             return;
         }
 
+        // 2. Filtro anti-bucle: ignorar auto-respuestas para no saturar SMTP
+        if (remitente.equalsIgnoreCase(SMTP_SENDER) && asunto.toUpperCase().startsWith("RE:")) {
+            System.out.println("[INFO] Auto-respuesta detectada (" + asunto + "). Se descarta para evitar bucle.");
+            return;
+        }
+
+        // 3. Procesar orden con CommandParser
         String respuesta = parser.procesar(remitente, asunto, cuerpo);
 
         System.out.println("[PROCESADO] Resultado de ejecución:");
         System.out.println(respuesta);
 
+        // 4. Armar asunto de respuesta
         String asuntoRespuesta = asunto.toUpperCase().startsWith("RE:")
                 ? asunto
                 : "RE: " + asunto;
@@ -113,6 +145,7 @@ public class EmailApp implements Runnable {
             asuntoRespuesta = "RE: Notificacion Sistema FEDER";
         }
 
+        // 5. Despacho por SMTP
         System.out.println("[OUT] Despachando respuesta SMTP a: " + remitente + "...");
         boolean enviado = clienteSMTP.enviarCorreo(remitente, asuntoRespuesta, respuesta);
 

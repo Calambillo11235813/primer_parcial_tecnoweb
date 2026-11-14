@@ -42,18 +42,18 @@ public class CommandParser {
         // 1. Determinar cuál campo contiene el comando (prioridad: Subject, luego Body)
         String textoOrden = buscarTextoComando(subject, body);
         if (textoOrden == null || textoOrden.trim().isEmpty()) {
-            return "ERROR [400]: No se detectó ningún comando válido en el asunto ni en el cuerpo del correo.\n" +
-                   "Envíe 'HELP' para consultar el manual de comandos permitidos.";
+            return "ERROR [400]: No se detectó ningún comando válido en el asunto ni en el cuerpo del correo.\n"
+                    + "Envíe 'HELP' para consultar el manual de comandos permitidos.";
         }
-
-        // 2. Extraer el nombre del comando y sus parámetros
-        String comando;
-        List<String> parametros = new ArrayList<>();
 
         textoOrden = textoOrden.trim();
 
-        // Patrón estándar: COMANDO [param1; param2; ...] o COMANDO []
-        Pattern patronCorchetes = Pattern.compile("^([A-Za-z0-9_]+)\\s*\\[(.*)\\]$", Pattern.DOTALL);
+        // 2. Extraer el nombre del comando y sus parámetros de forma robusta
+        String comando = "";
+        List<String> parametros = new ArrayList<>();
+
+        // Patrón tolerante: busca COMANDO [parametros] sin importar si después hay puntos, espacios o caracteres extras
+        Pattern patronCorchetes = Pattern.compile("^([A-Za-z0-9_]+)\\s*\\[([^\\]]*)\\]");
         Matcher matcher = patronCorchetes.matcher(textoOrden);
 
         if (matcher.find()) {
@@ -62,20 +62,24 @@ public class CommandParser {
             if (!contenidoParams.isEmpty()) {
                 String[] partes = contenidoParams.split(";");
                 for (String p : partes) {
-                    parametros.add(p.trim());
+                    parametros.add(limpiarParametro(p));
                 }
             }
         } else {
             // Sintaxis simple sin corchetes (ej. "HELP", "LISUSR", o "INSUSR param1; param2")
-            String[] partesEspacio = textoOrden.split("\\s+", 2);
+            // Limpiar puntos finales sueltos si existen (ej. "HELP." o "LISUSR.")
+            String textoLimpio = textoOrden.replaceAll("[.]+$", "").trim();
+            String[] partesEspacio = textoLimpio.split("\\s+", 2);
             comando = partesEspacio[0].toUpperCase();
 
             if (partesEspacio.length > 1) {
                 String resto = partesEspacio[1].trim();
+                // Si el resto tenía corchetes incompletos o texto con punto
+                resto = resto.replaceAll("[\\[\\]]", "").trim();
                 if (!resto.isEmpty()) {
                     String[] partes = resto.split(";");
                     for (String p : partes) {
-                        parametros.add(p.trim());
+                        parametros.add(limpiarParametro(p));
                     }
                 }
             }
@@ -101,15 +105,32 @@ public class CommandParser {
                     return obtenerManualAyuda();
 
                 default:
-                    return "ERROR [404]: Comando desconocido '" + comando + "'.\n" +
-                           "Comandos disponibles: INSUSR, MODUSR, DELUSR, LISUSR, HELP.\n" +
-                           "Envíe 'HELP' para mayor información de sintaxis.";
+                    return "ERROR [404]: Comando desconocido '" + comando + "'.\n"
+                            + "Comandos disponibles: INSUSR, MODUSR, DELUSR, LISUSR, HELP.\n"
+                            + "Envíe 'HELP' para mayor información de sintaxis.";
             }
         } catch (SecurityException se) {
             return se.getMessage();
         } catch (Exception ex) {
             return "ERROR [500]: Ocurrió un error inesperado al procesar el comando: " + ex.getMessage();
         }
+    }
+
+    /**
+     * Limpia un parámetro individual eliminando espacios al borde, comillas o puntos residuales.
+     */
+    private String limpiarParametro(String param) {
+        if (param == null) {
+            return "";
+        }
+        String p = param.trim();
+        // Quitar comillas dobles o simples al inicio y al final si las incluyeron
+        if ((p.startsWith("\"") && p.endsWith("\"")) || (p.startsWith("'") && p.endsWith("'"))) {
+            if (p.length() >= 2) {
+                p = p.substring(1, p.length() - 1).trim();
+            }
+        }
+        return p;
     }
 
     /**
@@ -141,7 +162,7 @@ public class CommandParser {
             }
         }
 
-        // Si el asunto tiene texto pero no coincide con los tokens exactos, se retorna para que el parser intente evaluar
+        // Si el asunto tiene texto pero no coincide directamente con la lista, retornarlo para evaluarlo
         if (subject != null && !subject.trim().isEmpty()) {
             return subject.trim();
         }
@@ -218,37 +239,36 @@ public class CommandParser {
      * Genera el manual del comando HELP con la sintaxis de todos los comandos soportados.
      */
     private String obtenerManualAyuda() {
-        return "========================================================================\n" +
-               "           MANUAL DE COMANDOS DEL SISTEMA INSTITUCIONAL FEDER           \n" +
-               "========================================================================\n\n" +
-               "FORMATO GENERAL:\n" +
-               "  COMANDO [parametro1; parametro2; ...]\n\n" +
-               "COMANDOS DISPONIBLES (CU-01: USUARIOS Y ROLES):\n" +
-               "------------------------------------------------------------------------\n" +
-               "1. INSUSR [nombre_completo; correo_electronico; contrasena; rol_id]\n" +
-               "   - Permiso requerido: Solo rol 'Director'.\n" +
-               "   - Descripción: Registra un nuevo usuario con contraseña cifrada (SHA-256).\n" +
-               "   - Ejemplo: INSUSR [Maria Lopez; mlopez@feder.org.bo; Secr2026!; 2]\n\n" +
-               "2. MODUSR [id_usuario; nombre_completo; correo_electronico; estado; rol_id]\n" +
-               "   - Permiso requerido: Solo rol 'Director'.\n" +
-               "   - Estados válidos: 'Activo' o 'Inactivo'.\n" +
-               "   - Ejemplo: MODUSR [2; Maria Lopez Perez; mlopez@feder.org.bo; Activo; 2]\n\n" +
-               "3. DELUSR [id_usuario]\n" +
-               "   - Permiso requerido: Solo rol 'Director'.\n" +
-               "   - Descripción: Realiza baja lógica (estado 'Inactivo') del usuario.\n" +
-               "   - Ejemplo: DELUSR [2]\n\n" +
-               "4. LISUSR []\n" +
-               "   - Permiso requerido: Usuarios activos (Director, Secretaria, Instructor).\n" +
-               "   - Descripción: Devuelve el listado tabulado de usuarios registrados.\n" +
-               "   - Ejemplo: LISUSR []\n\n" +
-               "5. HELP\n" +
-               "   - Permiso requerido: Público / Cualquier usuario.\n" +
-               "   - Descripción: Retorna esta guía de comandos.\n\n" +
-               "CATÁLOGO DE ROLES:\n" +
-               "  ID 1: Director\n" +
-               "  ID 2: Secretaria\n" +
-               "  ID 3: Instructor\n" +
-               "========================================================================";
+        return "========================================================================\n"
+                + "           MANUAL DE COMANDOS DEL SISTEMA INSTITUCIONAL FEDER           \n"
+                + "========================================================================\n\n"
+                + "FORMATO GENERAL:\n"
+                + "  COMANDO [parametro1; parametro2; ...]\n\n"
+                + "COMANDOS DISPONIBLES (CU-01: USUARIOS Y ROLES):\n"
+                + "------------------------------------------------------------------------\n"
+                + "1. INSUSR [nombre_completo; correo_electronico; contrasena; rol_id]\n"
+                + "   - Permiso requerido: Solo rol 'Director'.\n"
+                + "   - Descripción: Registra un nuevo usuario con contraseña cifrada (SHA-256).\n"
+                + "   - Ejemplo: INSUSR [Maria Lopez; mlopez@feder.org.bo; Secr2026!; 2]\n\n"
+                + "2. MODUSR [id_usuario; nombre_completo; correo_electronico; estado; rol_id]\n"
+                + "   - Permiso requerido: Solo rol 'Director'.\n"
+                + "   - Estados válidos: 'Activo' o 'Inactivo'.\n"
+                + "   - Ejemplo: MODUSR [2; Maria Lopez Perez; mlopez@feder.org.bo; Activo; 2]\n\n"
+                + "3. DELUSR [id_usuario]\n"
+                + "   - Permiso requerido: Solo rol 'Director'.\n"
+                + "   - Descripción: Realiza baja lógica (estado 'Inactivo') del usuario.\n"
+                + "   - Ejemplo: DELUSR [2]\n\n"
+                + "4. LISUSR []\n"
+                + "   - Permiso requerido: Usuarios activos (Director, Secretaria, Instructor).\n"
+                + "   - Descripción: Devuelve el listado tabulado de usuarios registrados.\n"
+                + "   - Ejemplo: LISUSR []\n\n"
+                + "5. HELP\n"
+                + "   - Permiso requerido: Público / Cualquier usuario.\n"
+                + "   - Descripción: Retorna esta guía de comandos.\n\n"
+                + "CATÁLOGO DE ROLES:\n"
+                + "  ID 1: Director\n"
+                + "  ID 2: Secretaria\n"
+                + "  ID 3: Instructor\n"
+                + "========================================================================";
     }
 }
-
