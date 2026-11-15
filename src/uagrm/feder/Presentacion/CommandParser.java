@@ -1,9 +1,19 @@
 package uagrm.feder.Presentacion;
 
+import uagrm.feder.Datos.DComunidad;
+import uagrm.feder.Datos.DConsulta;
+import uagrm.feder.Datos.DGaleriaMultimedia;
+import uagrm.feder.Datos.DNoticia;
 import uagrm.feder.Datos.DPaginaInstitucional;
+import uagrm.feder.Datos.DProgramaProductivo;
 import uagrm.feder.Datos.DRedSocial;
+import uagrm.feder.Datos.DTestimonio;
 import uagrm.feder.Datos.DUsuario;
+import uagrm.feder.Entity.Consulta;
+import uagrm.feder.Negocio.NComunidad;
+import uagrm.feder.Negocio.NConsulta;
 import uagrm.feder.Negocio.NInstitucional;
+import uagrm.feder.Negocio.NPublicacion;
 import uagrm.feder.Negocio.NUsuario;
 
 import java.util.ArrayList;
@@ -15,7 +25,7 @@ import java.util.regex.Pattern;
 /**
  * Analizador Sintáctico determinista de comandos para el sistema FEDER.
  * Procesa las órdenes enviadas por correo electrónico (Asunto o Cuerpo)
- * y las despacha a la Capa de Negocio (NUsuario, NInstitucional).
+ * y las despacha a la Capa de Negocio.
  */
 public class CommandParser {
 
@@ -25,21 +35,41 @@ public class CommandParser {
             // CU-02: Información Institucional y Redes Sociales
             "INSPAG", "MODPAG", "DELPAG", "LISPAG",
             "INSRED", "MODRED", "DELRED", "LISRED",
+            // CU-03: Publicaciones y Medios (Noticias, Multimedia, Testimonios)
+            "INSNOT", "MODNOT", "DELNOT", "LISNOT",
+            "INSMUL", "MODMUL", "DELMUL", "LISMUL",
+            "INSTES", "MODTES", "DELTES", "LISTES",
+            // CU-04: Comunidades, Programas Productivos y Búsqueda/Filtrado
+            "INSCOM", "MODCOM", "DELCOM", "LISCOM",
+            "INSPRO", "MODPRO", "DELPRO", "LISPRO",
+            "BUSCON",
+            // CU-07: Bandeja de Consultas Ciudadanas
+            "INSCON", "MODCON", "RESCON", "DELCON", "LISCON",
             // Ayuda general
             "HELP"
     );
 
     private final NUsuario nUsuario;
     private final NInstitucional nInstitucional;
+    private final NPublicacion nPublicacion;
+    private final NComunidad nComunidad;
+    private final NConsulta nConsulta;
 
     public CommandParser() {
         this.nUsuario = new NUsuario();
         this.nInstitucional = new NInstitucional();
+        this.nPublicacion = new NPublicacion();
+        this.nComunidad = new NComunidad();
+        this.nConsulta = new NConsulta();
     }
 
-    public CommandParser(NUsuario nUsuario, NInstitucional nInstitucional) {
+    public CommandParser(NUsuario nUsuario, NInstitucional nInstitucional,
+            NPublicacion nPublicacion, NComunidad nComunidad, NConsulta nConsulta) {
         this.nUsuario = nUsuario;
         this.nInstitucional = nInstitucional;
+        this.nPublicacion = nPublicacion;
+        this.nComunidad = nComunidad;
+        this.nConsulta = nConsulta;
     }
 
     /**
@@ -135,6 +165,88 @@ public class CommandParser {
                             DRedSocial.HEADERS, nInstitucional.listarRedesSociales()
                     );
 
+                // --- CU-03: Gestionar Noticias y Comunicados (RF-01) ---
+                case "INSNOT":
+                    return nPublicacion.registrarNoticia(parametros, remitente);
+                case "MODNOT":
+                    return nPublicacion.modificarNoticia(parametros, remitente);
+                case "DELNOT":
+                    return nPublicacion.eliminarNoticia(parametros, remitente);
+                case "LISNOT":
+                    return construirTablaAscii(
+                            DNoticia.HEADERS, nPublicacion.listarNoticias()
+                    );
+
+                // --- CU-03: Gestionar Galería Multimedia (RF-02) ---
+                case "INSMUL":
+                    return nPublicacion.registrarMultimedia(parametros, remitente);
+                case "MODMUL":
+                    return nPublicacion.modificarMultimedia(parametros, remitente);
+                case "DELMUL":
+                    return nPublicacion.eliminarMultimedia(parametros, remitente);
+                case "LISMUL":
+                    return construirTablaAscii(
+                            DGaleriaMultimedia.HEADERS, nPublicacion.listarMultimedia()
+                    );
+
+                // --- CU-03: Gestionar Testimonios (RF-08) ---
+                case "INSTES":
+                    return nPublicacion.registrarTestimonio(parametros, remitente);
+                case "MODTES":
+                    return nPublicacion.modificarTestimonio(parametros, remitente);
+                case "DELTES":
+                    return nPublicacion.eliminarTestimonio(parametros, remitente);
+                case "LISTES":
+                    return construirTablaAscii(
+                            DTestimonio.HEADERS, nPublicacion.listarTestimonios()
+                    );
+
+                // --- CU-04: Gestionar Comunidades Beneficiarias (RF-05) ---
+                case "INSCOM":
+                    return nComunidad.registrarComunidad(parametros, remitente);
+                case "MODCOM":
+                    return nComunidad.modificarComunidad(parametros, remitente);
+                case "DELCOM":
+                    return nComunidad.eliminarComunidad(parametros, remitente);
+                case "LISCOM":
+                    return construirTablaAscii(
+                            DComunidad.HEADERS, nComunidad.listarComunidades()
+                    );
+
+                // --- CU-04: Gestionar Programas Productivos (RF-06) ---
+                case "INSPRO":
+                    return nComunidad.registrarPrograma(parametros, remitente);
+                case "MODPRO":
+                    return nComunidad.modificarPrograma(parametros, remitente);
+                case "DELPRO":
+                    return nComunidad.eliminarPrograma(parametros, remitente);
+                case "LISPRO":
+                    return construirTablaAscii(
+                            DProgramaProductivo.HEADERS, nComunidad.listarProgramas()
+                    );
+
+                // --- CU-04: Búsqueda y Filtrado de Contenidos (RF-07) ---
+                case "BUSCON":
+                    return construirTablaAscii(
+                            DProgramaProductivo.HEADERS_BUSQUEDA,
+                            nComunidad.buscarContenidos(parametros)
+                    );
+
+                // --- CU-07: Gestionar Bandeja de Consultas (RF-16) ---
+                case "INSCON":
+                    return nConsulta.registrarConsulta(parametros, remitente);
+                case "MODCON":
+                    return nConsulta.clasificarEstado(parametros, remitente);
+                case "RESCON":
+                    return procesarRespuestaConsulta(parametros, remitente);
+                case "DELCON":
+                    return nConsulta.eliminarConsulta(parametros, remitente);
+                case "LISCON":
+                    return construirTablaAscii(
+                            DConsulta.HEADERS,
+                            nConsulta.listarConsultas(parametros, remitente)
+                    );
+
                 // --- Manual de Ayuda ---
                 case "HELP":
                     return obtenerManualAyuda();
@@ -143,8 +255,8 @@ public class CommandParser {
                     return "ERROR [404]: Comando desconocido '" + comando + "'.\n"
                             + "Envíe 'HELP' para consultar el catálogo de comandos y su sintaxis.";
             }
-        } catch (SecurityException se) {
-            return se.getMessage();
+        } catch (IllegalArgumentException | SecurityException e) {
+            return e.getMessage();
         } catch (Exception ex) {
             return "ERROR [500]: Error inesperado al procesar el comando: " + ex.getMessage();
         }
@@ -281,6 +393,31 @@ public class CommandParser {
         return String.format("%-" + n + "s", s);
     }
 
+    /**
+     * Ejecuta RESCON en la capa de negocio y, si el correo del ciudadano difiere del operador,
+     * despacha una notificación SMTP adicional directamente al ciudadano.
+     */
+    private String procesarRespuestaConsulta(List<String> parametros, String remitente) {
+        String resultado = nConsulta.responderConsulta(parametros, remitente);
+        if (resultado.startsWith("SUCCESS:") && parametros.size() == 2) {
+            try {
+                int idConsulta = Integer.parseInt(parametros.get(0).trim());
+                Consulta consulta = nConsulta.obtenerPorId(idConsulta);
+                if (consulta != null
+                        && !consulta.getCorreo_remitente().equalsIgnoreCase(remitente)) {
+                    ClienteSMTP smtp = new ClienteSMTP();
+                    String asuntoCiudadano = "RE: Consulta FEDER - " + consulta.getAsunto();
+                    smtp.enviarCorreo(
+                            consulta.getCorreo_remitente(), asuntoCiudadano, resultado
+                    );
+                }
+            } catch (Exception ignored) {
+                // Si el correo externo no puede enrutarse por ACL, se mantiene el registro en BD
+            }
+        }
+        return resultado;
+    }
+
     private String obtenerManualAyuda() {
         return "========================================================================\n"
                 + "           MANUAL DE COMANDOS DEL SISTEMA INSTITUCIONAL FEDER           \n"
@@ -306,6 +443,43 @@ public class CommandParser {
                 + "  MODRED [id_red_social; plataforma; url_enlace; estado]\n"
                 + "  DELRED [id_red_social]\n"
                 + "  LISRED []\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "CU-03: GESTIONAR PUBLICACIONES Y MEDIOS (RF-01, RF-02, RF-08)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSNOT [titulo; contenido; imagen_principal; etiquetas]\n"
+                + "  MODNOT [id_noticia; titulo; contenido; imagen_principal; etiquetas; estado]\n"
+                + "  DELNOT [id_noticia]\n"
+                + "  LISNOT []\n\n"
+                + "  INSMUL [titulo; tipo; url_archivo; descripcion; noticia_id]\n"
+                + "  MODMUL [id_multimedia; titulo; tipo; url_archivo; descripcion; noticia_id]\n"
+                + "  DELMUL [id_multimedia]\n"
+                + "  LISMUL []\n\n"
+                + "  INSTES [titulo; texto; fotografia; enlace_audiovisual; comunidad_id]\n"
+                + "  MODTES [id_testimonio; titulo; texto; fotografia; enlace; estado; comunidad_id]\n"
+                + "  DELTES [id_testimonio]\n"
+                + "  LISTES []\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "CU-04: GESTIONAR COMUNIDADES Y PROGRAMAS (RF-05, RF-06, RF-07)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSCOM [nombre; descripcion; ubicacion]\n"
+                + "  MODCOM [id_comunidad; nombre; descripcion; ubicacion; estado]\n"
+                + "  DELCOM [id_comunidad]\n"
+                + "  LISCOM []\n\n"
+                + "  INSPRO [nombre; descripcion; area_productiva; poblacion_beneficiaria; comunidad_id]\n"
+                + "  MODPRO [id_programa; nombre; descripcion; area; poblacion; comunidad_id]\n"
+                + "  DELPRO [id_programa]\n"
+                + "  LISPRO []\n\n"
+                + "  BUSCON [criterio_comunidad_o_rubro]\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "CU-07: GESTIONAR BANDEJA DE CONSULTAS CIUDADANAS (RF-16)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSCON [nombre_remitente; asunto; mensaje]\n"
+                + "  INSCON [nombre_remitente; correo_remitente; asunto; mensaje]\n"
+                + "  MODCON [id_consulta; estado]\n"
+                + "  RESCON [id_consulta; respuesta_institucional]\n"
+                + "  DELCON [id_consulta]\n"
+                + "  LISCON []  o  LISCON [estado]\n"
+                + "  * Estados: Pendiente, En Proceso, Atendido\n\n"
                 + "------------------------------------------------------------------------\n"
                 + "AYUDA GENERAL:\n"
                 + "  HELP\n"
