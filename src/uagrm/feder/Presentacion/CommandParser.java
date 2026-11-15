@@ -1,5 +1,7 @@
 package uagrm.feder.Presentacion;
 
+import uagrm.feder.Datos.DAporte;
+import uagrm.feder.Datos.DCampana;
 import uagrm.feder.Datos.DComunidad;
 import uagrm.feder.Datos.DConsulta;
 import uagrm.feder.Datos.DGaleriaMultimedia;
@@ -7,13 +9,18 @@ import uagrm.feder.Datos.DNoticia;
 import uagrm.feder.Datos.DPaginaInstitucional;
 import uagrm.feder.Datos.DProgramaProductivo;
 import uagrm.feder.Datos.DRedSocial;
+import uagrm.feder.Datos.DReporte;
 import uagrm.feder.Datos.DTestimonio;
 import uagrm.feder.Datos.DUsuario;
+import uagrm.feder.Entity.Aporte;
 import uagrm.feder.Entity.Consulta;
+import uagrm.feder.Negocio.NAporte;
+import uagrm.feder.Negocio.NCampana;
 import uagrm.feder.Negocio.NComunidad;
 import uagrm.feder.Negocio.NConsulta;
 import uagrm.feder.Negocio.NInstitucional;
 import uagrm.feder.Negocio.NPublicacion;
+import uagrm.feder.Negocio.NReporte;
 import uagrm.feder.Negocio.NUsuario;
 
 import java.util.ArrayList;
@@ -43,8 +50,14 @@ public class CommandParser {
             "INSCOM", "MODCOM", "DELCOM", "LISCOM",
             "INSPRO", "MODPRO", "DELPRO", "LISPRO",
             "BUSCON",
+            // CU-05: Campañas de Recaudación y Seguimiento Financiero
+            "INSCMP", "MODCMP", "DELCMP", "LISCMP", "SEGCMP",
+            // CU-06: Donaciones, Aportes y Fichas Técnicas de Proyectos
+            "INSAPO", "MODAPO", "DELAPO", "LISAPO", "FICPRO",
             // CU-07: Bandeja de Consultas Ciudadanas
             "INSCON", "MODCON", "RESCON", "DELCON", "LISCON",
+            // CU-08: Reportes y Estadísticas Ejecutivas
+            "REPGEN", "REPCMP", "REPAPO", "REPCON", "REPAUD",
             // Ayuda general
             "HELP"
     );
@@ -53,23 +66,34 @@ public class CommandParser {
     private final NInstitucional nInstitucional;
     private final NPublicacion nPublicacion;
     private final NComunidad nComunidad;
+    private final NCampana nCampana;
+    private final NAporte nAporte;
     private final NConsulta nConsulta;
+    private final NReporte nReporte;
 
     public CommandParser() {
         this.nUsuario = new NUsuario();
         this.nInstitucional = new NInstitucional();
         this.nPublicacion = new NPublicacion();
         this.nComunidad = new NComunidad();
+        this.nCampana = new NCampana();
+        this.nAporte = new NAporte();
         this.nConsulta = new NConsulta();
+        this.nReporte = new NReporte();
     }
 
     public CommandParser(NUsuario nUsuario, NInstitucional nInstitucional,
-            NPublicacion nPublicacion, NComunidad nComunidad, NConsulta nConsulta) {
+            NPublicacion nPublicacion, NComunidad nComunidad,
+            NCampana nCampana, NAporte nAporte, NConsulta nConsulta,
+            NReporte nReporte) {
         this.nUsuario = nUsuario;
         this.nInstitucional = nInstitucional;
         this.nPublicacion = nPublicacion;
         this.nComunidad = nComunidad;
+        this.nCampana = nCampana;
+        this.nAporte = nAporte;
         this.nConsulta = nConsulta;
+        this.nReporte = nReporte;
     }
 
     /**
@@ -232,6 +256,39 @@ public class CommandParser {
                             nComunidad.buscarContenidos(parametros)
                     );
 
+                // --- CU-05: Gestionar Campañas de Recaudación (RF-09 y RF-10) ---
+                case "INSCMP":
+                    return nCampana.registrarCampana(parametros, remitente);
+                case "MODCMP":
+                    return nCampana.modificarCampana(parametros, remitente);
+                case "DELCMP":
+                    return nCampana.cerrarCampana(parametros, remitente);
+                case "LISCMP":
+                    return construirTablaAscii(
+                            DCampana.HEADERS,
+                            nCampana.listarCampanas()
+                    );
+                case "SEGCMP":
+                    return construirTablaAscii(
+                            DCampana.HEADERS_SEGUIMIENTO,
+                            nCampana.seguimientoRecaudacion(parametros)
+                    );
+
+                // --- CU-06: Gestionar Donaciones y Aportes (RF-11, RF-12 y RF-13) ---
+                case "INSAPO":
+                    return nAporte.registrarAporte(parametros, remitente);
+                case "MODAPO":
+                    return procesarVerificacionAporte(parametros, remitente);
+                case "DELAPO":
+                    return nAporte.anularAporte(parametros, remitente);
+                case "LISAPO":
+                    return construirTablaAscii(
+                            DAporte.HEADERS,
+                            nAporte.listarAportes(parametros, remitente)
+                    );
+                case "FICPRO":
+                    return nAporte.descargarFichaProyecto(parametros);
+
                 // --- CU-07: Gestionar Bandeja de Consultas (RF-16) ---
                 case "INSCON":
                     return nConsulta.registrarConsulta(parametros, remitente);
@@ -245,6 +302,30 @@ public class CommandParser {
                     return construirTablaAscii(
                             DConsulta.HEADERS,
                             nConsulta.listarConsultas(parametros, remitente)
+                    );
+
+                // --- CU-08: Generar Reportes y Estadísticas (RF-17) ---
+                case "REPGEN":
+                    return construirReporteEjecutivoIntegral(remitente);
+                case "REPCMP":
+                    return construirTablaAscii(
+                            DReporte.HEADERS_CAMPANAS,
+                            nReporte.reporteCampanas(remitente)
+                    );
+                case "REPAPO":
+                    return construirTablaAscii(
+                            DReporte.HEADERS_APORTES_MODALIDAD,
+                            nReporte.reporteAportes(remitente)
+                    );
+                case "REPCON":
+                    return construirTablaAscii(
+                            DReporte.HEADERS_CONSULTAS_VOLUMEN,
+                            nReporte.reporteConsultas(remitente)
+                    );
+                case "REPAUD":
+                    return construirTablaAscii(
+                            DReporte.HEADERS_AUDITORIA,
+                            nReporte.reporteAuditoria(remitente)
                     );
 
                 // --- Manual de Ayuda ---
@@ -394,6 +475,55 @@ public class CommandParser {
     }
 
     /**
+     * Construye el reporte ejecutivo integral (REPGEN - RF-17) combinando KPIs globales
+     * con las tablas consolidadas de campañas, aportes por modalidad y volumen de consultas.
+     */
+    private String construirReporteEjecutivoIntegral(String remitente) {
+        String kpis = nReporte.obtenerResumenEjecutivo(remitente);
+        if (kpis.startsWith("ERROR")) {
+            return kpis;
+        }
+        StringBuilder sb = new StringBuilder(kpis);
+        sb.append("\n[4] AVANCE FINANCIERO DE METAS POR CAMPANA\n");
+        sb.append(construirTablaAscii(
+                DReporte.HEADERS_CAMPANAS, nReporte.reporteCampanas(remitente)
+        ));
+        sb.append("\n[5] DISTRIBUCION DE APORTES POR MODALIDAD DE PAGO\n");
+        sb.append(construirTablaAscii(
+                DReporte.HEADERS_APORTES_MODALIDAD, nReporte.reporteAportes(remitente)
+        ));
+        sb.append("\n[6] VOLUMEN DE CONSULTAS CIUDADANAS POR ESTADO\n");
+        sb.append(construirTablaAscii(
+                DReporte.HEADERS_CONSULTAS_VOLUMEN, nReporte.reporteConsultas(remitente)
+        ));
+        return sb.toString();
+    }
+
+    /**
+     * Ejecuta MODAPO en la capa de negocio y, si el correo del donante difiere del operador,
+     * despacha el comprobante digital de confirmación vía SMTP directamente al donante (RF-12).
+     */
+    private String procesarVerificacionAporte(List<String> parametros, String remitente) {
+        String resultado = nAporte.verificarAporte(parametros, remitente);
+        if (resultado.startsWith("SUCCESS:") && parametros.size() == 2) {
+            try {
+                int idAporte = Integer.parseInt(parametros.get(0).trim());
+                Aporte aporte = nAporte.obtenerPorId(idAporte);
+                if (aporte != null
+                        && !aporte.getCorreo_donante().equalsIgnoreCase(remitente)) {
+                    ClienteSMTP smtp = new ClienteSMTP();
+                    String asuntoDonante = "Comprobante Digital de Aporte FEDER #APO-"
+                            + String.format("%05d", idAporte);
+                    smtp.enviarCorreo(aporte.getCorreo_donante(), asuntoDonante, resultado);
+                }
+            } catch (Exception ignored) {
+                // Si el correo externo no puede enrutarse por ACL, se mantiene el registro en BD
+            }
+        }
+        return resultado;
+    }
+
+    /**
      * Ejecuta RESCON en la capa de negocio y, si el correo del ciudadano difiere del operador,
      * despacha una notificación SMTP adicional directamente al ciudadano.
      */
@@ -471,6 +601,25 @@ public class CommandParser {
                 + "  LISPRO []\n\n"
                 + "  BUSCON [criterio_comunidad_o_rubro]\n\n"
                 + "------------------------------------------------------------------------\n"
+                + "CU-05: GESTIONAR CAMPAÑAS DE RECAUDACIÓN (RF-09, RF-10)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSCMP [titulo; descripcion; meta_economica; fecha_limite; comunidad_id]\n"
+                + "  MODCMP [id_campana; titulo; descripcion; meta; fecha_limite; estado; comunidad_id]\n"
+                + "  DELCMP [id_campana]  (Cierra la campana)\n"
+                + "  LISCMP []\n"
+                + "  SEGCMP []  o  SEGCMP [id_campana]\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "CU-06: GESTIONAR DONACIONES Y APORTES (RF-11, RF-12, RF-13)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  INSAPO [nombre_donante; monto; modalidad; campana_id]\n"
+                + "  INSAPO [nombre_donante; correo_donante; monto; modalidad; campana_id]\n"
+                + "  MODAPO [id_aporte; estado]\n"
+                + "  DELAPO [id_aporte]\n"
+                + "  LISAPO []  o  LISAPO [campana_id]\n"
+                + "  FICPRO []  o  FICPRO [id_campana]\n"
+                + "  * Modalidades: Transferencia bancaria, QR, Efectivo\n"
+                + "  * Estados Aporte: Pendiente de Confirmacion, Confirmado, Rechazado\n\n"
+                + "------------------------------------------------------------------------\n"
                 + "CU-07: GESTIONAR BANDEJA DE CONSULTAS CIUDADANAS (RF-16)\n"
                 + "------------------------------------------------------------------------\n"
                 + "  INSCON [nombre_remitente; asunto; mensaje]\n"
@@ -480,6 +629,14 @@ public class CommandParser {
                 + "  DELCON [id_consulta]\n"
                 + "  LISCON []  o  LISCON [estado]\n"
                 + "  * Estados: Pendiente, En Proceso, Atendido\n\n"
+                + "------------------------------------------------------------------------\n"
+                + "CU-08: GENERAR REPORTES Y ESTADISTICAS EJECUTIVAS (RF-17)\n"
+                + "------------------------------------------------------------------------\n"
+                + "  REPGEN []  (Reporte Ejecutivo Consolidado Integral)\n"
+                + "  REPCMP []  (Reporte Estadistico de Avance Financiero de Campanas)\n"
+                + "  REPAPO []  (Reporte de Aportes Agrupados por Modalidad y Estado)\n"
+                + "  REPCON []  (Reporte de Volumen de Consultas por Estado de Atencion)\n"
+                + "  REPAUD []  (Reporte de Bitacora y Auditoria de Acciones)\n\n"
                 + "------------------------------------------------------------------------\n"
                 + "AYUDA GENERAL:\n"
                 + "  HELP\n"

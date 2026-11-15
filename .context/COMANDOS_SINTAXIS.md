@@ -110,7 +110,31 @@ COMANDO [parametro1; parametro2; ...; parametroN]
 
 ---
 
-## 6. Catálogo de Comandos: CU-07 (Bandeja de Consultas Ciudadanas - RF-16)
+## 6. Catálogo de Comandos: CU-05 (Campañas de Recaudación - RF-09 y RF-10)
+
+| Comando | Parámetros Requeridos | Rol Autorizado | Descripción | Ejemplo de Uso |
+| :--- | :--- | :--- | :--- | :--- |
+| **`INSCMP`** | `[titulo; descripcion; meta_economica; fecha_limite; comunidad_id]` | **Director** | Crea una campaña de financiamiento con meta (> 0) y fecha límite (`YYYY-MM-DD`) | `INSCMP [Prensas Hidraulicas Robore; Compra de 3 prensas para aceite de totai; 15000.00; 2026-12-31; 2]` |
+| **`MODCMP`** | `[id_campana; titulo; descripcion; meta_economica; fecha_limite; estado; comunidad_id]` | **Director** | Edita los datos, plazo o estado (`Activa`, `Cerrada`, `Finalizada`, `Cancelada`) de una campaña | `MODCMP [1; Prensas Hidraulicas Robore; Equipamiento comunitario; 18000.00; 2026-12-31; Activa; 2]` |
+| **`DELCMP`** | `[id_campana]` | **Director** | Cierra formalmente una campaña cambiando su estado a `Cerrada` | `DELCMP [1]` |
+| **`LISCMP`** | `[]` | **Público / Todos** | Lista las campañas mostrando meta, monto recaudado confirmado y % de avance | `LISCMP []` |
+| **`SEGCMP`** | `[]` o `[id_campana]` | **Público / Todos** | **RF-10:** Cuadro detallado de seguimiento financiero (confirmado, faltante, % de avance y conteo de aportes confirmados vs pendientes) | `SEGCMP []` o `SEGCMP [1]` |
+
+---
+
+## 7. Catálogo de Comandos: CU-06 (Donaciones y Aportes - RF-11, RF-12 y RF-13)
+
+| Comando | Parámetros Requeridos | Rol Autorizado | Descripción | Ejemplo de Uso |
+| :--- | :--- | :--- | :--- | :--- |
+| **`INSAPO`** | `[nombre; monto; modalidad; campana_id]` o `[nombre; correo; monto; modalidad; campana_id]` | **Público / Donante / Todos** | **RF-11 y RF-12:** Registra compromiso de donación (`Transferencia bancaria`, `QR`, `Efectivo`) y despacha comprobante digital con agradecimiento | `INSAPO [Empresa Fridosa; 500.00; QR; 1]` |
+| **`MODAPO`** | `[id_aporte; estado]` | **Director, Secretaria** | **RF-12:** Verifica y actualiza el estado del aporte (`Confirmado`, `Pendiente de Confirmación`, `Rechazado`), recalcula la campaña y emite comprobante oficial | `MODAPO [1; Confirmado]` |
+| **`DELAPO`** | `[id_aporte]` | **Director, Secretaria** | Anula un aporte (`Rechazado`) y recalcula el monto recaudado de la campaña | `DELAPO [1]` |
+| **`LISAPO`** | `[]` o `[campana_id]` | **Director, Secretaria** | Lista todos los aportes registrados o los de una campaña específica | `LISAPO []` o `LISAPO [1]` |
+| **`FICPRO`** | `[]` o `[id_campana]` | **Público / Donante / Todos** | **RF-13:** Descarga la ficha técnica digital completa del proyecto comunitario (comunidad, programas y avance financiero) | `FICPRO [1]` o `FICPRO []` |
+
+---
+
+## 8. Catálogo de Comandos: CU-07 (Bandeja de Consultas Ciudadanas - RF-16)
 
 | Comando | Parámetros Requeridos | Rol Autorizado | Descripción | Ejemplo de Uso |
 | :--- | :--- | :--- | :--- | :--- |
@@ -122,7 +146,19 @@ COMANDO [parametro1; parametro2; ...; parametroN]
 
 ---
 
-## 7. Códigos de Respuesta del Sistema
+## 9. Catálogo de Comandos: CU-08 (Reportes y Estadísticas Ejecutivas - RF-17)
+
+| Comando | Parámetros Requeridos | Rol Autorizado | Descripción | Ejemplo de Uso |
+| :--- | :--- | :--- | :--- | :--- |
+| **`REPGEN`** | `[]` | **Director** | **RF-17:** Genera el Reporte Ejecutivo Consolidado Integral (KPIs financieros, de atención ciudadana, de impacto comunitario y tablas de campañas, aportes y consultas) | `REPGEN []` |
+| **`REPCMP`** | `[]` | **Director** | **RF-17:** Reporte estadístico de avance financiero de metas por campaña (meta, confirmado, pendiente, faltante y %) | `REPCMP []` |
+| **`REPAPO`** | `[]` | **Director** | **RF-17:** Reporte estadístico de aportes agrupados por modalidad de pago y porcentaje de participación | `REPAPO []` |
+| **`REPCON`** | `[]` | **Director** | **RF-17:** Reporte estadístico de volumen y porcentaje de atención de consultas ciudadanas por estado | `REPCON []` |
+| **`REPAUD`** | `[]` | **Director** | Reporte de bitácora y auditoría de las acciones ejecutadas en el sistema | `REPAUD []` |
+
+---
+
+## 10. Códigos de Respuesta del Sistema
 
 - **`SUCCESS:`** Operación ejecutada y auditada correctamente en PostgreSQL.
 - **`ERROR [400]:`** Error de sintaxis o cantidad incorrecta de parámetros.

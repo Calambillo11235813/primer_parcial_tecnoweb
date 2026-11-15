@@ -1,8 +1,8 @@
 # ESTADO DEL PROYECTO: PRIMER PARCIAL TECNOLOGÍA WEB (FEDER)
 
-**Última actualización:** 14 de noviembre de 2026  
+**Última actualización:** 15 de noviembre de 2026  
 **Entorno:** Java puro (sin frameworks externos de correo) + PostgreSQL institucional / local  
-**Meta de desarrollo:** Plan de 3 días
+**Meta de desarrollo:** Plan de 3 días (Casos de uso codificados - pendiente pruebas manuales)
 
 ---
 
@@ -22,7 +22,7 @@
 - `CASOS_DE_USO_REQUISITOS.md`: Mapeo de CU-01 al CU-08 con los 17 RF y actores.
 - `ARQUITECTURA_3_CAPAS.md`: Definición de responsabilidades para `EmailApp`, capas `N...`, capas `D...` y entidades.
 - `ESQUEMA_DB.sql`: Script DDL con `currentSchema=feder`.
-- `COMANDOS_SINTAXIS.md`: Diccionario de órdenes para CU-01, CU-02, CU-03, CU-04 y CU-07.
+- `COMANDOS_SINTAXIS.md`: Diccionario completo de los 44 comandos del sistema (CU-01 al CU-08 + `HELP`).
 - `ESTANDAR_CODIFICACION.md`: Convenciones de código Java del proyecto.
 
 ---
@@ -35,7 +35,7 @@
 | **`CU-02: Gestionar Información Institucional`** | **RF-03:** Información institucional<br>**RF-04:** Redes sociales | **IMPLEMENTADO (End-to-End)** | • `PaginaInstitucional.java`, `RedSocial.java`<br>• `DPaginaInstitucional.java`, `DRedSocial.java` (CRUD transaccional + Auditoría)<br>• `NInstitucional.java` (RBAC Director + validación URL)<br>• Comandos: `INSPAG`, `MODPAG`, `DELPAG`, `LISPAG`, `INSRED`, `MODRED`, `DELRED`, `LISRED` |
 | **`CU-03: Gestionar Publicaciones y Medios`** | **RF-01:** Noticias y comunicados<br>**RF-02:** Galería multimedia<br>**RF-08:** Testimonios | **IMPLEMENTADO (End-to-End)** | • `Noticia.java`, `GaleriaMultimedia.java`, `Testimonio.java`<br>• `DNoticia.java`, `DGaleriaMultimedia.java`, `DTestimonio.java` (CRUD transaccional + Auditoría)<br>• `NPublicacion.java` (RBAC Director/Instructor + validaciones de dominio)<br>• Comandos: `INSNOT`, `MODNOT`, `DELNOT`, `LISNOT`, `INSMUL`, `MODMUL`, `DELMUL`, `LISMUL`, `INSTES`, `MODTES`, `DELTES`, `LISTES` |
 | **`CU-04: Gestionar Comunidades y Programas`** | **RF-05:** Comunidades beneficiarias<br>**RF-06:** Programas de asistencia<br>**RF-07:** Búsqueda y filtrado | **IMPLEMENTADO (End-to-End)** | • `Comunidad.java`, `ProgramaProductivo.java`<br>• `DComunidad.java`, `DProgramaProductivo.java` (CRUD transaccional + Auditoría + búsqueda transversal `UNION ALL`)<br>• `NComunidad.java` (RBAC Director/Instructor + unicidad de comunidad)<br>• Comandos: `INSCOM`, `MODCOM`, `DELCOM`, `LISCOM`, `INSPRO`, `MODPRO`, `DELPRO`, `LISPRO`, `BUSCON` |
-| **`CU-05: Gestionar Campañas de Recaudación`** | **RF-09:** Campañas de financiamiento<br>**RF-10:** Seguimiento recaudación | **PENDIENTE** | Tabla: `CAMPANA`<br>Por implementar: `DCampana`, `NCampana` |
-| **`CU-06: Gestionar Donaciones y Aportes`** | **RF-11:** Registro de aportes<br>**RF-12:** Confirmación de aporte<br>**RF-13:** Fichas de proyectos | **PENDIENTE** | Tabla: `APORTE`<br>Por implementar: `DAporte`, `NAporte` |
+| **`CU-05: Gestionar Campañas de Recaudación`** | **RF-09:** Campañas de financiamiento<br>**RF-10:** Seguimiento recaudación | **IMPLEMENTADO (End-to-End)** | • `Campana.java`<br>• `DCampana.java` (CRUD transaccional + Auditoría + cálculo de avance y % sobre aportes confirmados)<br>• `NCampana.java` (RBAC Director + validación de metas y plazos)<br>• Comandos: `INSCMP`, `MODCMP`, `DELCMP`, `LISCMP`, `SEGCMP` |
+| **`CU-06: Gestionar Donaciones y Aportes`** | **RF-11:** Registro de aportes<br>**RF-12:** Confirmación de aporte<br>**RF-13:** Fichas de proyectos | **IMPLEMENTADO (End-to-End)** | • `Aporte.java`<br>• `DAporte.java` (Registro, verificación con sincronización transaccional de `CAMPANA.monto_recaudado` y ficha técnica digital)<br>• `NAporte.java` (Comprobante digital de agradecimiento SMTP + RBAC Director/Secretaria)<br>• Comandos: `INSAPO`, `MODAPO`, `DELAPO`, `LISAPO`, `FICPRO` |
 | **`CU-07: Gestionar Bandeja de Consultas`** | **RF-16:** Mensajes de contacto | **IMPLEMENTADO (End-to-End)** | • `Consulta.java`<br>• `DConsulta.java` (Bandeja interna + clasificación transaccional + Auditoría)<br>• `NConsulta.java` (Recepción ciudadana + RBAC Director/Secretaria + respuesta SMTP)<br>• Comandos: `INSCON`, `MODCON`, `RESCON`, `DELCON`, `LISCON` |
-| **`CU-08: Generar Reportes y Estadísticas`** | **RF-17:** Reportes y estadísticas | **PENDIENTE** | Vistas y cálculos analíticos<br>Por implementar: `DReporte`, `NReporte` |
+| **`CU-08: Generar Reportes y Estadísticas`** | **RF-17:** Reportes y estadísticas | **IMPLEMENTADO (End-to-End)** | • `DReporte.java` (KPIs ejecutivos, avance financiero de metas, aportes por modalidad, volumen de consultas y bitácora de auditoría)<br>• `NReporte.java` (RBAC exclusivo para Director)<br>• Comandos: `REPGEN`, `REPCMP`, `REPAPO`, `REPCON`, `REPAUD` |
